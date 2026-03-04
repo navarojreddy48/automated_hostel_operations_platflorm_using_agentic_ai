@@ -150,6 +150,8 @@ backend/
 - Remove `/api/create-demo-users` endpoint in production
 - Use environment variables for sensitive config in production
 - Implement JWT tokens for production (currently using localStorage)
+- If using Gmail API OAuth2, copy `client_secret.template.json` to `client_secret.json` and fill your credentials locally
+- If credentials were ever exposed, rotate/revoke them immediately in Google Cloud Console before reuse
 
 ## 🚦 Next Steps
 
