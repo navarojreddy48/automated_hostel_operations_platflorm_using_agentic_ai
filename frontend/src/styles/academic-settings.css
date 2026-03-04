@@ -1,0 +1,38 @@
+.academic-settings-page{
+  padding:24px;
+  max-width:1400px;
+  margin:0 auto;
+}
+
+.academic-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
+.academic-header h1{margin:0;color:var(--text-dark);font-size:22px}
+.academic-header p{margin:6px 0 0 0;color:var(--muted);font-size:13px}
+
+.academic-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.academic-card{background:#fff;border:1px solid var(--border-light);border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(2,6,23,0.06)}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.card-header h2{margin:0;font-size:16px;color:var(--text-dark)}
+.count-badge{padding:4px 8px;border-radius:999px;background:#eef2ff;border:1px solid #c7d2fe;color:#4338ca;font-size:12px;font-weight:700}
+
+.add-row{display:flex;gap:8px;margin-bottom:12px}
+.add-row input{flex:1;border:1px solid var(--border-light);border-radius:8px;padding:8px 10px;font-size:13px}
+.add-row button{border:none;background:var(--accent);color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer}
+
+.list{display:flex;flex-direction:column;gap:10px}
+.list-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;border:1px solid var(--border-light);border-radius:10px;padding:10px;background:#fff}
+.list-row input{border:1px solid var(--border-light);border-radius:8px;padding:6px 8px;font-size:12px}
+.list-row select{border:1px solid var(--border-light);border-radius:8px;padding:6px 8px;font-size:12px}
+.row-title{font-weight:600;color:var(--text-dark)}
+.row-actions{display:flex;gap:6px}
+.row-actions button{border:1px solid var(--border-light);background:#fff;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.row-actions button.primary{background:#ecfdf5;border-color:#bbf7d0;color:#065f46}
+.row-actions button.danger{background:#fff1f2;border-color:#fecaca;color:#9f1239}
+.status{padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase}
+.status.active{background:#ecfdf5;color:#065f46;border:1px solid #bbf7d0}
+.status.inactive{background:#fff1f2;color:#9f1239;border:1px solid #fecaca}
+
+.empty{color:var(--muted);font-size:12px}
+
+@media (max-width:900px){
+  .academic-grid{grid-template-columns:1fr}
+}

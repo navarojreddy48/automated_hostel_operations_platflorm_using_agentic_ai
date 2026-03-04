@@ -1,0 +1,58 @@
+/* Technician Layout Styles - Consistent with Student/Warden layouts */
+
+:root {
+  --bg: #f6f8fb;
+  --sidebar-bg: #f9fafb;
+  --card: #ffffff;
+  --muted: #6b7280;
+  --accent: #3b82f6;
+  --text-dark: #1f2937;
+  --border-light: #e5e7eb;
+  --hover-light: #f3f4f6;
+  --success: #10b981;
+}
+
+body {
+  background: var(--bg);
+}
+
+.technician-layout-wrapper {
+  min-height: 100vh;
+  overflow: hidden;
+  display: flex;
+  gap: 24px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.technician-layout-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background: transparent;
+  min-width: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .technician-layout-wrapper {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .technician-layout-main {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .technician-layout-wrapper {
+    flex-direction: column;
+    padding: 12px;
+  }
+
+  .technician-layout-main {
+    margin-left: 0 !important;
+    padding: 12px;
+  }
+}
