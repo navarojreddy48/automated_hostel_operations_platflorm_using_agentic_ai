@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import StudentLayout from '../../components/StudentLayout';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-leave.css';
 
@@ -203,7 +202,7 @@ const StudentLeave = () => {
   }
 
   return (
-    <StudentLayout>
+    <>
           <main className="student-main">
           {/* HEADER */}
           <header className="leave-header">
@@ -455,7 +454,7 @@ const StudentLeave = () => {
           </div>
         </div>
       )}
-    </StudentLayout>
+    </>
   );
 };
 

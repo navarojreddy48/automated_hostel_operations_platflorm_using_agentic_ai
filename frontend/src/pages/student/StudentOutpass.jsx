@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import StudentLayout from '../../components/StudentLayout';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-outpass.css';
 
@@ -246,7 +245,7 @@ const StudentOutpass = () => {
   };
 
   return (
-    <StudentLayout>
+    <>
           {/* HEADER */}
           <header className="outpass-header">
             <div>
@@ -594,7 +593,7 @@ const StudentOutpass = () => {
               </div>
             </div>
           )}
-    </StudentLayout>
+    </>
   );
 };
 

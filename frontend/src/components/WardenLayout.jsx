@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import TopNavbar from './TopNavbar';
 import '../styles/warden-dashboard.css';
 
 const WardenLayout = () => {
@@ -8,7 +9,8 @@ const WardenLayout = () => {
     <div className="warden-page">
       <div className="warden-layout">
         <Sidebar role="warden" />
-        <main className="warden-main" style={{ marginLeft: '280px' }}>
+        <TopNavbar role="warden" />
+        <main className="warden-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
           <Outlet />
         </main>
       </div>

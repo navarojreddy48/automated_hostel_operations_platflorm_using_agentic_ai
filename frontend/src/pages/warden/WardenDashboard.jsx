@@ -15,6 +15,12 @@ const WardenDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [greeting, setGreeting] = useState('');
   const [recentActivities, setRecentActivities] = useState([]);
+  const [securitySummary, setSecuritySummary] = useState({
+    high_priority_alerts: 0,
+    missing_students: 0,
+    unauthorized_exit_attempts: 0,
+    high_risk_students: 0
+  });
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -42,6 +48,12 @@ const WardenDashboard = () => {
         if (activitiesData.success && Array.isArray(activitiesData.data)) {
           setRecentActivities(activitiesData.data);
         }
+
+        const securityRes = await fetch('http://localhost:5000/api/warden/security/agentic-monitor');
+        const securityData = await securityRes.json();
+        if (securityData.success && securityData.data) {
+          setSecuritySummary(securityData.data.status_summary || {});
+        }
         
         // Fetch admin dashboard stats for summary
         const dashRes = await fetch('http://localhost:5000/api/admin/dashboard');
@@ -60,8 +72,9 @@ const WardenDashboard = () => {
         setLoading(false);
       }
     };
-    
+    const poller = setInterval(fetchData, 60000);
     fetchData();
+    return () => clearInterval(poller);
   }, []);
 
   return (
@@ -102,6 +115,17 @@ const WardenDashboard = () => {
             <div className="monitor-sub">{activeComplaints > 0 ? 'Need attention' : 'No issues'}</div>
           </div>
           <div className="monitor-icon">⚠️</div>
+        </div>
+
+        <div className="monitor-card red" onClick={() => navigate('/warden/agentic-alerts')} role="button">
+          <div className="monitor-left">
+            <div className="monitor-title">Security Alerts</div>
+            <div className="monitor-value">{securitySummary.high_priority_alerts || 0}</div>
+            <div className="monitor-sub">
+              {securitySummary.missing_students || 0} missing · {securitySummary.high_risk_students || 0} high-risk
+            </div>
+          </div>
+          <div className="monitor-icon">🛡️</div>
         </div>
 
         <div className="monitor-card green" onClick={() => navigate('/warden/rooms')} role="button">

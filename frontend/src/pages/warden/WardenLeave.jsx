@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import '../../styles/warden-complaints.css';
 
 const parseDate = (value) => new Date(`${value}T00:00:00`);
+const API_BASE_URL = 'http://localhost:5000';
 
 const WardenLeave = () => {
   const [requests, setRequests] = useState([]);
@@ -13,15 +15,29 @@ const WardenLeave = () => {
   const [processingId, setProcessingId] = useState(null);
   const [historyModal, setHistoryModal] = useState({ open: false, roll: '', name: '' });
   const [historyState, setHistoryState] = useState({ loading: false, items: [] });
+  const [agenticData, setAgenticData] = useState({
+    status_summary: {},
+    alerts: [],
+    new_request_alerts: [],
+    recommendations: [],
+    weekly_insights: {}
+  });
 
   // Fetch leave requests from database
   useEffect(() => {
     fetchLeaveRequests();
+    fetchAgenticLeaveMonitor();
+
+    const poller = setInterval(() => {
+      fetchAgenticLeaveMonitor();
+    }, 60000);
+
+    return () => clearInterval(poller);
   }, []);
 
   const fetchLeaveRequests = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/warden/leaves/pending');
+      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/pending`);
       const data = await response.json();
       if (data.success) {
         setRequests(data.data);
@@ -30,6 +46,26 @@ const WardenLeave = () => {
       console.error('Error fetching leave requests:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAgenticLeaveMonitor = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/agentic-monitor`);
+      if (!response.ok) return;
+
+      const data = await response.json();
+      if (data.success && data.data) {
+        setAgenticData({
+          status_summary: data.data.status_summary || {},
+          alerts: Array.isArray(data.data.alerts) ? data.data.alerts : [],
+          new_request_alerts: Array.isArray(data.data.new_request_alerts) ? data.data.new_request_alerts : [],
+          recommendations: Array.isArray(data.data.recommendations) ? data.data.recommendations : [],
+          weekly_insights: data.data.weekly_insights || {}
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching leave agentic monitor:', error);
     }
   };
 
@@ -134,8 +170,8 @@ const WardenLeave = () => {
 
     const userId = user.userId || user.id;
     const endpoint = draft.mode === 'approve' 
-      ? `/api/warden/leave/${id}/approve`
-      : `/api/warden/leave/${id}/reject`;
+    ? `${API_BASE_URL}/api/warden/leave/${id}/approve`
+    : `${API_BASE_URL}/api/warden/leave/${id}/reject`;
     
     try {
       const response = await fetch(endpoint, {
@@ -184,6 +220,34 @@ const WardenLeave = () => {
         <p>Review and manage student leave requests</p>
       </div>
 
+      <div className="agentic-summary-grid" style={{ marginBottom: '16px' }}>
+        <div className="agentic-tile critical">
+          <div className="agentic-label">Pending Too Long</div>
+          <div className="agentic-value">{agenticData.status_summary.pending_too_long || 0}</div>
+        </div>
+        <div className="agentic-tile warning">
+          <div className="agentic-label">Active Leaves</div>
+          <div className="agentic-value">{agenticData.status_summary.active || 0}</div>
+        </div>
+        <div className="agentic-tile info">
+          <div className="agentic-label">Completed</div>
+          <div className="agentic-value">{agenticData.status_summary.completed || 0}</div>
+        </div>
+        <div className="agentic-tile success">
+          <div className="agentic-label">Suspicious Alerts</div>
+          <div className="agentic-value">{agenticData.alerts.length || 0}</div>
+        </div>
+      </div>
+
+      {agenticData.new_request_alerts.length > 0 && (
+        <div className="leave-reason" style={{ marginBottom: '16px', background: '#fff7ed', borderColor: '#fdba74' }}>
+          <div className="leave-label" style={{ color: '#9a3412' }}>New Leave Request Alerts</div>
+          <div className="leave-value" style={{ color: '#7c2d12' }}>
+            {agenticData.new_request_alerts.slice(0, 3).map((alert) => `${alert.title}: ${alert.message}`).join(' | ')}
+          </div>
+        </div>
+      )}
+
       <div className="leave-filters">
         <button 
           className={`filter-btn ${selectedStatus === 'all' ? 'active' : ''}`}
@@ -202,6 +266,24 @@ const WardenLeave = () => {
           onClick={() => setSelectedStatus('approved')}
         >
           Approved ({requests.filter(r => r.status === 'approved').length})
+        </button>
+        <button 
+          className={`filter-btn ${selectedStatus === 'active' ? 'active' : ''}`}
+          onClick={() => setSelectedStatus('active')}
+        >
+          Active ({requests.filter(r => r.status === 'active').length})
+        </button>
+        <button 
+          className={`filter-btn ${selectedStatus === 'completed' ? 'active' : ''}`}
+          onClick={() => setSelectedStatus('completed')}
+        >
+          Completed ({requests.filter(r => r.status === 'completed').length})
+        </button>
+        <button 
+          className={`filter-btn ${selectedStatus === 'expired' ? 'active' : ''}`}
+          onClick={() => setSelectedStatus('expired')}
+        >
+          Expired ({requests.filter(r => r.status === 'expired').length})
         </button>
         <button 
           className={`filter-btn ${selectedStatus === 'rejected' ? 'active' : ''}`}

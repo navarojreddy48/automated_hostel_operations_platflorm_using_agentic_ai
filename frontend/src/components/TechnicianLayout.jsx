@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import TopNavbar from './TopNavbar';
 import '../styles/technician-layout.css';
 
 /**
@@ -13,7 +14,8 @@ const TechnicianLayout = ({ children }) => {
   return (
     <div className="technician-layout-wrapper">
       <Sidebar role="technician" />
-      <main className="technician-layout-main" style={{ marginLeft: '280px' }}>
+      <TopNavbar role="technician" />
+      <main className="technician-layout-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
         {children || <Outlet />}
       </main>
     </div>

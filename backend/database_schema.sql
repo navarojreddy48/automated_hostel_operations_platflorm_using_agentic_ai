@@ -249,9 +249,15 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   from_date DATE NOT NULL,
   to_date DATE NOT NULL,
   total_days INT NOT NULL,
-  status ENUM('pending', 'approved', 'rejected', 'cancelled') DEFAULT 'pending',
+  status ENUM('pending', 'approved', 'active', 'completed', 'expired', 'rejected', 'cancelled') DEFAULT 'pending',
   approved_by INT,
   approved_at TIMESTAMP NULL,
+  active_at TIMESTAMP NULL,
+  completed_at TIMESTAMP NULL,
+  expired_at TIMESTAMP NULL,
+  pending_alert_sent_at TIMESTAMP NULL,
+  ai_flagged TINYINT(1) DEFAULT 0,
+  ai_flag_reason VARCHAR(255),
   rejection_reason TEXT,
   supporting_documents VARCHAR(255),
   emergency_contact VARCHAR(20),
@@ -264,7 +270,8 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   INDEX idx_student_id (student_id),
   INDEX idx_status (status),
   INDEX idx_from_date (from_date),
-  INDEX idx_leave_type (leave_type)
+  INDEX idx_leave_type (leave_type),
+  INDEX idx_pending_alert_sent_at (pending_alert_sent_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- College leave requests (additional flow)
@@ -350,6 +357,29 @@ CREATE TABLE IF NOT EXISTS leave_alerts (
   INDEX assigned_to (assigned_to)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Autonomous leave monitoring alerts
+CREATE TABLE IF NOT EXISTS leave_agentic_alerts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  related_leave_id INT NULL,
+  student_id INT NULL,
+  alert_type ENUM('pending_too_long', 'frequent_leave', 'suspicious_pattern', 'attendance_conflict', 'limit_exceeded', 'recommendation') NOT NULL,
+  severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+  detection_key VARCHAR(255) UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  metadata_json JSON NULL,
+  is_read TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (related_leave_id) REFERENCES leave_requests(id) ON DELETE SET NULL,
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  INDEX idx_leave_agentic_type (alert_type),
+  INDEX idx_leave_agentic_severity (severity),
+  INDEX idx_leave_agentic_created_at (created_at),
+  INDEX idx_leave_agentic_is_read (is_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ========================================
 -- 6️⃣ COMPLAINTS & MAINTENANCE
 -- ========================================
@@ -364,10 +394,16 @@ CREATE TABLE IF NOT EXISTS complaints (
   description TEXT NOT NULL,
   location VARCHAR(255),
   priority ENUM('low', 'medium', 'high', 'urgent') DEFAULT 'medium',
-  status ENUM('pending', 'assigned', 'in_progress', 'resolved', 'closed', 'cancelled') DEFAULT 'pending',
+  ai_priority ENUM('low', 'medium', 'high') DEFAULT 'low',
+  status ENUM('pending', 'assigned', 'in_progress', 'delayed', 'resolved', 'closed', 'cancelled') DEFAULT 'pending',
   assigned_technician_id INT,
   assigned_at TIMESTAMP NULL,
   resolved_at TIMESTAMP NULL,
+  delayed_at TIMESTAMP NULL,
+  escalated_at TIMESTAMP NULL,
+  last_technician_update_at TIMESTAMP NULL,
+  last_reminder_sent_at TIMESTAMP NULL,
+  reminder_count INT DEFAULT 0,
   resolution_notes TEXT,
   rating INT,
   feedback TEXT,
@@ -383,6 +419,7 @@ CREATE TABLE IF NOT EXISTS complaints (
   INDEX idx_status (status),
   INDEX idx_category (category),
   INDEX idx_priority (priority),
+  INDEX idx_ai_priority (ai_priority),
   INDEX idx_assigned_technician (assigned_technician_id),
   
   CHECK (rating IS NULL OR (rating >= 1 AND rating <= 5))
@@ -401,6 +438,27 @@ CREATE TABLE IF NOT EXISTS complaint_history (
   FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
   FOREIGN KEY (changed_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_complaint_id (complaint_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Autonomous complaint monitoring alerts
+CREATE TABLE IF NOT EXISTS complaint_agentic_alerts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  complaint_id INT NULL,
+  alert_type ENUM('critical', 'unassigned_delay', 'delayed', 'technician_reminder', 'escalated', 'anomaly', 'recommendation') NOT NULL,
+  severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+  alert_key VARCHAR(255) UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  metadata_json JSON NULL,
+  is_read TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+  INDEX idx_alert_type (alert_type),
+  INDEX idx_alert_severity (severity),
+  INDEX idx_alert_created_at (created_at),
+  INDEX idx_alert_is_read (is_read)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========================================
@@ -528,6 +586,48 @@ CREATE TABLE IF NOT EXISTS security_logs (
   INDEX idx_timestamp (timestamp),
   INDEX idx_severity (severity),
   INDEX idx_logged_by (logged_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Agentic alerts for autonomous security monitoring
+CREATE TABLE IF NOT EXISTS security_agentic_alerts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id INT NULL,
+  related_outpass_id INT NULL,
+  alert_type ENUM('late_return', 'missing_return', 'night_movement', 'unauthorized_exit_attempt', 'repeat_violation', 'risk_escalation', 'recommendation') NOT NULL,
+  severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+  detection_key VARCHAR(255) UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  metadata_json JSON NULL,
+  is_read TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  FOREIGN KEY (related_outpass_id) REFERENCES outpasses(id) ON DELETE SET NULL,
+  INDEX idx_security_alert_type (alert_type),
+  INDEX idx_security_alert_severity (severity),
+  INDEX idx_security_alert_created_at (created_at),
+  INDEX idx_security_alert_is_read (is_read)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Risk profile generated by Security Monitoring Agent
+CREATE TABLE IF NOT EXISTS security_student_risk_profiles (
+  student_id INT PRIMARY KEY,
+  risk_score INT DEFAULT 0,
+  risk_level ENUM('low', 'medium', 'high') DEFAULT 'low',
+  late_returns_30d INT DEFAULT 0,
+  missing_returns_30d INT DEFAULT 0,
+  unauthorized_exits_30d INT DEFAULT 0,
+  night_movements_30d INT DEFAULT 0,
+  violation_count_30d INT DEFAULT 0,
+  last_incident_at DATETIME NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+  INDEX idx_security_risk_level (risk_level),
+  INDEX idx_security_risk_score (risk_score),
+  INDEX idx_security_violation_count (violation_count_30d)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========================================

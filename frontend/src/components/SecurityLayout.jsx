@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import TopNavbar from './TopNavbar';
 import '../styles/security-dashboard.css';
 
 /**
@@ -13,7 +14,8 @@ const SecurityLayout = ({ children }) => {
   return (
     <div className="security-layout">
       <Sidebar role="security" />
-      <main className="security-main" style={{ marginLeft: '280px' }}>
+      <TopNavbar role="security" />
+      <main className="security-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
         {children || <Outlet />}
       </main>
     </div>

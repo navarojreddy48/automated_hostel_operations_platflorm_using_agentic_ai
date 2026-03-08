@@ -83,8 +83,8 @@
   min-height: 100vh;
   overflow: hidden;
   display: flex;
-  gap: 24px;
-  padding: 24px;
+  gap: 0;
+  padding: 0;
   box-sizing: border-box;
   position: relative;
 }
@@ -665,6 +665,14 @@
   background: #ecfdf5;
   color: #047857;
   border-color: #a7f3d0;
+}
+
+.status-badge.returned-late {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fdba74;
+  padding-right: 18px;
+  box-sizing: border-box;
 }
 
 .notes-section {

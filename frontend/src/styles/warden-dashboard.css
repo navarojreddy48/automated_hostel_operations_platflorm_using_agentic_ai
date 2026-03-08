@@ -1,7 +1,7 @@
 :root{--bg:#f6f8fb;--sidebar-bg:#f9fafb;--card:#ffffff;--muted:#6b7280;--accent:#3b82f6;--text-dark:#1f2937;--border-light:#e5e7eb;--hover-light:#f3f4f6;--success:#10b981}
 body{background:var(--bg)}
 .warden-page{min-height:100vh;overflow:hidden}
-.warden-layout{display:flex;gap:24px;padding:24px;min-height:100vh;box-sizing:border-box}
+.warden-layout{display:flex;gap:0;padding:0;min-height:100vh;box-sizing:border-box}
 .warden-sidebar{width:260px;flex:0 0 260px;background:var(--sidebar-bg);color:var(--text-dark);border-radius:12px;padding:20px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid var(--border-light);height:calc(100vh - 48px);position:sticky;top:24px;overflow-y:auto}
 .warden-header-section{display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--border-light)}
 .warden-logo{font-size:24px}

@@ -1,13 +1,16 @@
 import React from 'react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import TopNavbar from './TopNavbar';
 import '../styles/student-layout.css';
 
 const StudentLayout = ({ children }) => {
   return (
     <div className="student-layout-wrapper">
       <Sidebar role="student" />
-      <main className="student-layout-main" style={{ marginLeft: '280px' }}>
-        {children}
+      <TopNavbar role="student" />
+      <main className="student-layout-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+        {children || <Outlet />}
       </main>
     </div>
   );

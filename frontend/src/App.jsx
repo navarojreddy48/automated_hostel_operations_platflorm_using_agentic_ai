@@ -14,6 +14,7 @@ import Complaints from './pages/student/Complaints';
 import MessMenu from './pages/student/MessMenu';
 import Parcels from './pages/student/Parcels';
 import Room from './pages/student/Room';
+import StudentLayout from './components/StudentLayout';
 import WardenLayout from './components/WardenLayout';
 import AdminLayout from './components/AdminLayout';
 import TechnicianLayout from './components/TechnicianLayout';
@@ -100,13 +101,16 @@ function App() {
           <Route path="/registration-status" element={<RegistrationStatus />} />
         
         {/* Student Routes - Protected */}
-        <Route path="/student/dashboard" element={<ProtectedRoute allowedRoles={['student']}><StudentDashboard /></ProtectedRoute>} />
-        <Route path="/student/outpass" element={<ProtectedRoute allowedRoles={['student']}><StudentOutpass /></ProtectedRoute>} />
-        <Route path="/student/leave" element={<ProtectedRoute allowedRoles={['student']}><StudentLeave /></ProtectedRoute>} />
-        <Route path="/student/complaints" element={<ProtectedRoute allowedRoles={['student']}><Complaints /></ProtectedRoute>} />
-        <Route path="/student/mess" element={<ProtectedRoute allowedRoles={['student']}><MessMenu /></ProtectedRoute>} />
-        <Route path="/student/parcels" element={<ProtectedRoute allowedRoles={['student']}><Parcels /></ProtectedRoute>} />
-        <Route path="/student/room" element={<ProtectedRoute allowedRoles={['student']}><Room /></ProtectedRoute>} />
+        <Route path="/student" element={<ProtectedRoute allowedRoles={['student']}><StudentLayout /></ProtectedRoute>}>
+          <Route index element={<StudentDashboard />} />
+          <Route path="dashboard" element={<StudentDashboard />} />
+          <Route path="outpass" element={<StudentOutpass />} />
+          <Route path="leave" element={<StudentLeave />} />
+          <Route path="complaints" element={<Complaints />} />
+          <Route path="mess" element={<MessMenu />} />
+          <Route path="parcels" element={<Parcels />} />
+          <Route path="room" element={<Room />} />
+        </Route>
         
         {/* Warden Routes - Protected */}
         <Route path="/warden" element={<ProtectedRoute allowedRoles={['warden']}><WardenLayout /></ProtectedRoute>}>

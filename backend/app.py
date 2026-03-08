@@ -70,6 +70,28 @@ OUTPASS_MONITOR_INTERVAL_SECONDS = int(os.getenv('OUTPASS_MONITOR_INTERVAL_SECON
 OUTPASS_MONITOR_ENABLED = os.getenv('OUTPASS_MONITOR_ENABLED', 'true').lower() == 'true'
 OUTPASS_MONITOR_THREAD_STARTED = False
 
+COMPLAINT_MONITOR_INTERVAL_SECONDS = int(os.getenv('COMPLAINT_MONITOR_INTERVAL_SECONDS', '60'))
+COMPLAINT_MONITOR_ENABLED = os.getenv('COMPLAINT_MONITOR_ENABLED', 'true').lower() == 'true'
+COMPLAINT_MONITOR_THREAD_STARTED = False
+COMPLAINT_ASSIGNMENT_SLA_HOURS = int(os.getenv('COMPLAINT_ASSIGNMENT_SLA_HOURS', '2'))
+COMPLAINT_DELAY_HOURS = int(os.getenv('COMPLAINT_DELAY_HOURS', '24'))
+COMPLAINT_ESCALATION_HOURS = int(os.getenv('COMPLAINT_ESCALATION_HOURS', '48'))
+COMPLAINT_TECH_REMINDER_HOURS = int(os.getenv('COMPLAINT_TECH_REMINDER_HOURS', '4'))
+
+LEAVE_MONITOR_INTERVAL_SECONDS = int(os.getenv('LEAVE_MONITOR_INTERVAL_SECONDS', '60'))
+LEAVE_MONITOR_ENABLED = os.getenv('LEAVE_MONITOR_ENABLED', 'true').lower() == 'true'
+LEAVE_MONITOR_THREAD_STARTED = False
+LEAVE_PENDING_SLA_HOURS = int(os.getenv('LEAVE_PENDING_SLA_HOURS', '6'))
+LEAVE_LIMIT_30_DAYS = int(os.getenv('LEAVE_LIMIT_30_DAYS', '5'))
+
+SECURITY_MONITOR_INTERVAL_SECONDS = int(os.getenv('SECURITY_MONITOR_INTERVAL_SECONDS', '60'))
+SECURITY_MONITOR_ENABLED = os.getenv('SECURITY_MONITOR_ENABLED', 'true').lower() == 'true'
+SECURITY_MONITOR_THREAD_STARTED = False
+SECURITY_RESTRICTED_START_HOUR = int(os.getenv('SECURITY_RESTRICTED_START_HOUR', '22'))
+SECURITY_RESTRICTED_END_HOUR = int(os.getenv('SECURITY_RESTRICTED_END_HOUR', '6'))
+SECURITY_RISK_MEDIUM_THRESHOLD = int(os.getenv('SECURITY_RISK_MEDIUM_THRESHOLD', '35'))
+SECURITY_RISK_HIGH_THRESHOLD = int(os.getenv('SECURITY_RISK_HIGH_THRESHOLD', '70'))
+
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -209,6 +231,1220 @@ def ensure_holiday_mode_columns():
     connection.close()
 
 
+def ensure_complaint_monitoring_columns():
+    """Ensure complaint monitoring columns and alert table exist"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            ALTER TABLE complaints
+            MODIFY COLUMN status ENUM('pending', 'assigned', 'in_progress', 'delayed', 'resolved', 'closed', 'cancelled') DEFAULT 'pending'
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Complaint status enum update warning: {e}")
+
+    alter_statements = [
+        "ALTER TABLE complaints ADD COLUMN ai_priority ENUM('low', 'medium', 'high') DEFAULT 'low'",
+        "ALTER TABLE complaints ADD COLUMN delayed_at DATETIME NULL",
+        "ALTER TABLE complaints ADD COLUMN escalated_at DATETIME NULL",
+        "ALTER TABLE complaints ADD COLUMN last_technician_update_at DATETIME NULL",
+        "ALTER TABLE complaints ADD COLUMN last_reminder_sent_at DATETIME NULL",
+        "ALTER TABLE complaints ADD COLUMN reminder_count INT DEFAULT 0",
+        "CREATE INDEX idx_complaints_ai_priority ON complaints(ai_priority)",
+        "CREATE INDEX idx_complaints_delayed_at ON complaints(delayed_at)",
+        "CREATE INDEX idx_complaints_escalated_at ON complaints(escalated_at)"
+    ]
+
+    for statement in alter_statements:
+        try:
+            cursor.execute(statement)
+            connection.commit()
+        except Exception as e:
+            if 'Duplicate column name' in str(e) or 'Duplicate key name' in str(e):
+                continue
+            print(f"Complaint monitoring setup warning: {e}")
+
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS complaint_agentic_alerts (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              complaint_id INT NULL,
+              alert_type ENUM('critical', 'unassigned_delay', 'delayed', 'technician_reminder', 'escalated', 'anomaly', 'recommendation') NOT NULL,
+              severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+              alert_key VARCHAR(255) UNIQUE,
+              title VARCHAR(255) NOT NULL,
+              message TEXT NOT NULL,
+              metadata_json JSON NULL,
+              is_read TINYINT(1) DEFAULT 0,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              FOREIGN KEY (complaint_id) REFERENCES complaints(id) ON DELETE CASCADE,
+              INDEX idx_alert_type (alert_type),
+              INDEX idx_alert_severity (severity),
+              INDEX idx_alert_created_at (created_at),
+              INDEX idx_alert_is_read (is_read)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Complaint alert table setup warning: {e}")
+
+    cursor.close()
+    connection.close()
+
+
+def ensure_leave_monitoring_columns():
+    """Ensure leave monitoring status/columns and alert table exist"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            ALTER TABLE leave_requests
+            MODIFY COLUMN status ENUM('pending', 'approved', 'active', 'completed', 'expired', 'rejected', 'cancelled') DEFAULT 'pending'
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Leave status enum update warning: {e}")
+
+    alter_statements = [
+        "ALTER TABLE leave_requests ADD COLUMN active_at DATETIME NULL",
+        "ALTER TABLE leave_requests ADD COLUMN completed_at DATETIME NULL",
+        "ALTER TABLE leave_requests ADD COLUMN expired_at DATETIME NULL",
+        "ALTER TABLE leave_requests ADD COLUMN pending_alert_sent_at DATETIME NULL",
+        "ALTER TABLE leave_requests ADD COLUMN ai_flagged TINYINT(1) DEFAULT 0",
+        "ALTER TABLE leave_requests ADD COLUMN ai_flag_reason VARCHAR(255) NULL",
+        "CREATE INDEX idx_leave_active_at ON leave_requests(active_at)",
+        "CREATE INDEX idx_leave_completed_at ON leave_requests(completed_at)",
+        "CREATE INDEX idx_leave_pending_alert_sent ON leave_requests(pending_alert_sent_at)"
+    ]
+
+    for statement in alter_statements:
+        try:
+            cursor.execute(statement)
+            connection.commit()
+        except Exception as e:
+            if 'Duplicate column name' in str(e) or 'Duplicate key name' in str(e):
+                continue
+            print(f"Leave monitoring setup warning: {e}")
+
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS leave_agentic_alerts (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              related_leave_id INT NULL,
+              student_id INT NULL,
+              alert_type ENUM('pending_too_long', 'frequent_leave', 'suspicious_pattern', 'attendance_conflict', 'limit_exceeded', 'recommendation') NOT NULL,
+              severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+              detection_key VARCHAR(255) UNIQUE,
+              title VARCHAR(255) NOT NULL,
+              message TEXT NOT NULL,
+              metadata_json JSON NULL,
+              is_read TINYINT(1) DEFAULT 0,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              FOREIGN KEY (related_leave_id) REFERENCES leave_requests(id) ON DELETE SET NULL,
+              FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+              INDEX idx_leave_alert_type (alert_type),
+              INDEX idx_leave_alert_severity (severity),
+              INDEX idx_leave_alert_created_at (created_at),
+              INDEX idx_leave_alert_is_read (is_read)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Leave alert table setup warning: {e}")
+
+    cursor.close()
+    connection.close()
+
+
+def ensure_security_monitoring_columns():
+    """Ensure security monitoring tables exist"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor()
+
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS security_agentic_alerts (
+              id INT AUTO_INCREMENT PRIMARY KEY,
+              student_id INT NULL,
+              related_outpass_id INT NULL,
+              alert_type ENUM('late_return', 'missing_return', 'night_movement', 'unauthorized_exit_attempt', 'repeat_violation', 'risk_escalation', 'recommendation') NOT NULL,
+              severity ENUM('low', 'medium', 'high', 'critical') DEFAULT 'medium',
+              detection_key VARCHAR(255) UNIQUE,
+              title VARCHAR(255) NOT NULL,
+              message TEXT NOT NULL,
+              metadata_json JSON NULL,
+              is_read TINYINT(1) DEFAULT 0,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+              FOREIGN KEY (related_outpass_id) REFERENCES outpasses(id) ON DELETE SET NULL,
+              INDEX idx_security_alert_type (alert_type),
+              INDEX idx_security_alert_severity (severity),
+              INDEX idx_security_alert_created_at (created_at),
+              INDEX idx_security_alert_is_read (is_read)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Security alert table setup warning: {e}")
+
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS security_student_risk_profiles (
+              student_id INT PRIMARY KEY,
+              risk_score INT DEFAULT 0,
+              risk_level ENUM('low', 'medium', 'high') DEFAULT 'low',
+              late_returns_30d INT DEFAULT 0,
+              missing_returns_30d INT DEFAULT 0,
+              unauthorized_exits_30d INT DEFAULT 0,
+              night_movements_30d INT DEFAULT 0,
+              violation_count_30d INT DEFAULT 0,
+              last_incident_at DATETIME NULL,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+              INDEX idx_security_risk_level (risk_level),
+              INDEX idx_security_risk_score (risk_score),
+              INDEX idx_security_violation_count (violation_count_30d)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        connection.commit()
+    except Exception as e:
+        print(f"Security risk profile setup warning: {e}")
+
+    cursor.close()
+    connection.close()
+
+
+def create_security_agentic_alert(cursor, alert_type, severity, title, message, student_id=None, related_outpass_id=None, detection_key=None, metadata=None):
+    """Create or refresh Security Monitoring Agent alert"""
+    key = detection_key or f"{alert_type}_{student_id or 'global'}_{related_outpass_id or 'na'}"
+    metadata_json = json.dumps(metadata) if metadata else None
+
+    cursor.execute("""
+        INSERT INTO security_agentic_alerts
+        (student_id, related_outpass_id, alert_type, severity, detection_key, title, message, metadata_json, is_read)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+        ON DUPLICATE KEY UPDATE
+            severity = VALUES(severity),
+            title = VALUES(title),
+            message = VALUES(message),
+            metadata_json = VALUES(metadata_json),
+            is_read = 0,
+            updated_at = CURRENT_TIMESTAMP
+    """, (student_id, related_outpass_id, alert_type, severity, key, title, message, metadata_json))
+
+
+def is_restricted_movement_time(timestamp_value):
+    """Check if timestamp falls within restricted movement hours"""
+    if not timestamp_value:
+        return False
+
+    hour = timestamp_value.hour
+    if SECURITY_RESTRICTED_START_HOUR < SECURITY_RESTRICTED_END_HOUR:
+        return SECURITY_RESTRICTED_START_HOUR <= hour < SECURITY_RESTRICTED_END_HOUR
+    return hour >= SECURITY_RESTRICTED_START_HOUR or hour < SECURITY_RESTRICTED_END_HOUR
+
+
+def classify_security_risk(score):
+    """Convert risk score to low/medium/high label"""
+    if score >= SECURITY_RISK_HIGH_THRESHOLD:
+        return 'high'
+    if score >= SECURITY_RISK_MEDIUM_THRESHOLD:
+        return 'medium'
+    return 'low'
+
+
+def fetch_security_insights_data(cursor):
+    """Shared query set for security insights"""
+    cursor.execute("""
+        SELECT srp.student_id, srp.risk_score, srp.risk_level, srp.violation_count_30d,
+               srp.late_returns_30d, srp.missing_returns_30d, srp.unauthorized_exits_30d, srp.night_movements_30d,
+               u.name AS student_name, s.roll_number
+        FROM security_student_risk_profiles srp
+        JOIN students s ON srp.student_id = s.id
+        JOIN users u ON s.user_id = u.id
+        ORDER BY srp.violation_count_30d DESC, srp.risk_score DESC
+        LIMIT 10
+    """)
+    top_violators = cursor.fetchall() or []
+
+    cursor.execute("""
+        SELECT
+            COUNT(*) AS total_returns_30d,
+            SUM(CASE WHEN late_minutes > 0 THEN 1 ELSE 0 END) AS late_returns_30d,
+            ROUND(AVG(CASE WHEN late_minutes > 0 THEN late_minutes END), 2) AS avg_late_minutes
+        FROM outpasses
+        WHERE actual_return_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    """)
+    late_stats = cursor.fetchone() or {}
+
+    cursor.execute("""
+        SELECT COUNT(*) AS unauthorized_exit_attempts_30d
+        FROM security_logs
+        WHERE activity_type = 'incident'
+          AND description LIKE 'Unauthorized exit attempt%'
+          AND timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+    """)
+    unauthorized_stats = cursor.fetchone() or {}
+
+    return {
+        'students_with_most_violations': [serialize_row(item) for item in top_violators],
+        'late_return_statistics': {
+            'total_returns_30d': int(late_stats.get('total_returns_30d') or 0),
+            'late_returns_30d': int(late_stats.get('late_returns_30d') or 0),
+            'avg_late_minutes': float(late_stats.get('avg_late_minutes') or 0)
+        },
+        'unauthorized_exit_attempts_30d': int(unauthorized_stats.get('unauthorized_exit_attempts_30d') or 0)
+    }
+
+
+def process_security_monitoring_cycle():
+    """Autonomous Security Monitoring Agent cycle"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor(dictionary=True)
+    now_time = datetime.now()
+
+    cursor.execute("""
+        SELECT o.id, o.student_id, o.status, o.expected_return_time, o.actual_return_time,
+               u.name AS student_name, s.roll_number
+        FROM outpasses o
+        JOIN students s ON o.student_id = s.id
+        JOIN users u ON s.user_id = u.id
+        WHERE o.status IN ('approved', 'approved_otp', 'exited', 'overdue')
+          AND o.actual_return_time IS NULL
+          AND o.expected_return_time IS NOT NULL
+          AND o.expected_return_time < NOW()
+    """)
+    missing_students = cursor.fetchall() or []
+
+    for row in missing_students:
+        late_minutes = int((now_time - row['expected_return_time']).total_seconds() / 60)
+        late_duration_str = format_late_duration(late_minutes)
+        severity = 'critical' if late_minutes >= 120 else 'high'
+        create_security_agentic_alert(
+            cursor,
+            alert_type='missing_return',
+            severity=severity,
+            title='Missing Student After Outpass Return Time',
+            message=(
+                f"{row.get('student_name')} ({row.get('roll_number')}) has not returned after approved outpass return time. "
+                f"Delay: {late_duration_str}."
+            ),
+            student_id=row.get('student_id'),
+            related_outpass_id=row.get('id'),
+            detection_key=f"missing_return_{row.get('id')}",
+            metadata={'late_minutes': late_minutes, 'status': row.get('status')}
+        )
+
+        cursor.execute("""
+            UPDATE outpasses
+            SET status = 'overdue', monitor_state = 'overdue', is_overdue = 1,
+                late_minutes = GREATEST(%s, COALESCE(late_minutes, 0)),
+                risk_level = 'high'
+            WHERE id = %s
+              AND actual_return_time IS NULL
+        """, (late_minutes, row['id']))
+
+    cursor.execute("""
+        SELECT sl.id, sl.related_student_id AS student_id, sl.related_outpass_id, sl.description, sl.timestamp,
+               u.name AS student_name, s.roll_number
+        FROM security_logs sl
+        LEFT JOIN students s ON sl.related_student_id = s.id
+        LEFT JOIN users u ON s.user_id = u.id
+        WHERE sl.activity_type = 'incident'
+          AND sl.description LIKE 'Unauthorized exit attempt%'
+          AND sl.timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        ORDER BY sl.timestamp DESC
+        LIMIT 200
+    """)
+    unauthorized_incidents = cursor.fetchall() or []
+
+    for incident in unauthorized_incidents:
+        create_security_agentic_alert(
+            cursor,
+            alert_type='unauthorized_exit_attempt',
+            severity='high',
+            title='Unauthorized Exit Attempt',
+            message=incident.get('description') or 'Unauthorized exit attempt detected.',
+            student_id=incident.get('student_id'),
+            related_outpass_id=incident.get('related_outpass_id'),
+            detection_key=f"unauthorized_exit_{incident.get('id')}",
+            metadata={'log_id': incident.get('id'), 'timestamp': serialize_result(incident.get('timestamp'))}
+        )
+
+    cursor.execute("""
+        SELECT sl.id, sl.related_student_id AS student_id, sl.related_outpass_id, sl.timestamp,
+               u.name AS student_name, s.roll_number
+        FROM security_logs sl
+        LEFT JOIN students s ON sl.related_student_id = s.id
+        LEFT JOIN users u ON s.user_id = u.id
+        WHERE sl.activity_type = 'outpass'
+          AND sl.timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        ORDER BY sl.timestamp DESC
+        LIMIT 500
+    """)
+    movement_logs = cursor.fetchall() or []
+
+    for movement in movement_logs:
+        if not is_restricted_movement_time(movement.get('timestamp')):
+            continue
+
+        create_security_agentic_alert(
+            cursor,
+            alert_type='night_movement',
+            severity='medium',
+            title='Restricted Hours Movement Detected',
+            message=(
+                f"Night movement logged for {movement.get('student_name') or 'student'} "
+                f"({movement.get('roll_number') or 'N/A'}) during restricted hours."
+            ),
+            student_id=movement.get('student_id'),
+            related_outpass_id=movement.get('related_outpass_id'),
+            detection_key=f"night_movement_{movement.get('id')}",
+            metadata={'log_id': movement.get('id'), 'timestamp': serialize_result(movement.get('timestamp'))}
+        )
+
+    cursor.execute("""
+        SELECT s.id AS student_id, u.name AS student_name, s.roll_number
+        FROM students s
+        JOIN users u ON s.user_id = u.id
+    """)
+    students = cursor.fetchall() or []
+
+    for student in students:
+        student_id = student['student_id']
+
+        cursor.execute("""
+            SELECT COUNT(*) AS late_returns_30d
+            FROM outpasses
+            WHERE student_id = %s
+              AND actual_return_time >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+              AND late_minutes > 0
+        """, (student_id,))
+        late_returns_30d = int((cursor.fetchone() or {}).get('late_returns_30d') or 0)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS missing_returns_30d
+            FROM outpasses
+            WHERE student_id = %s
+              AND status = 'overdue'
+              AND actual_return_time IS NULL
+              AND expected_return_time < NOW()
+        """, (student_id,))
+        missing_returns_30d = int((cursor.fetchone() or {}).get('missing_returns_30d') or 0)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS unauthorized_exits_30d
+            FROM security_logs
+            WHERE related_student_id = %s
+              AND activity_type = 'incident'
+              AND description LIKE 'Unauthorized exit attempt%'
+              AND timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """, (student_id,))
+        unauthorized_exits_30d = int((cursor.fetchone() or {}).get('unauthorized_exits_30d') or 0)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS night_movements_30d
+            FROM security_logs
+            WHERE related_student_id = %s
+              AND activity_type = 'outpass'
+              AND timestamp >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+              AND (HOUR(timestamp) >= %s OR HOUR(timestamp) < %s)
+        """, (student_id, SECURITY_RESTRICTED_START_HOUR, SECURITY_RESTRICTED_END_HOUR))
+        night_movements_30d = int((cursor.fetchone() or {}).get('night_movements_30d') or 0)
+
+        violation_count_30d = late_returns_30d + missing_returns_30d + unauthorized_exits_30d + night_movements_30d
+        risk_score = (
+            (late_returns_30d * 15)
+            + (missing_returns_30d * 30)
+            + (unauthorized_exits_30d * 25)
+            + (night_movements_30d * 8)
+        )
+        risk_level = classify_security_risk(risk_score)
+
+        cursor.execute("""
+            INSERT INTO security_student_risk_profiles
+            (student_id, risk_score, risk_level, late_returns_30d, missing_returns_30d, unauthorized_exits_30d,
+             night_movements_30d, violation_count_30d, last_incident_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON DUPLICATE KEY UPDATE
+                risk_score = VALUES(risk_score),
+                risk_level = VALUES(risk_level),
+                late_returns_30d = VALUES(late_returns_30d),
+                missing_returns_30d = VALUES(missing_returns_30d),
+                unauthorized_exits_30d = VALUES(unauthorized_exits_30d),
+                night_movements_30d = VALUES(night_movements_30d),
+                violation_count_30d = VALUES(violation_count_30d),
+                last_incident_at = VALUES(last_incident_at),
+                updated_at = CURRENT_TIMESTAMP
+        """, (
+            student_id,
+            risk_score,
+            risk_level,
+            late_returns_30d,
+            missing_returns_30d,
+            unauthorized_exits_30d,
+            night_movements_30d,
+            violation_count_30d
+        ))
+
+        if late_returns_30d >= 2 or unauthorized_exits_30d >= 1 or missing_returns_30d >= 1:
+            create_security_agentic_alert(
+                cursor,
+                alert_type='repeat_violation',
+                severity='high' if violation_count_30d >= 3 else 'medium',
+                title='Repeated Rule Violations',
+                message=(
+                    f"{student.get('student_name')} ({student.get('roll_number')}) has repeated security violations "
+                    f"in last 30 days (late={late_returns_30d}, unauthorized={unauthorized_exits_30d}, "
+                    f"missing={missing_returns_30d}, night={night_movements_30d})."
+                ),
+                student_id=student_id,
+                detection_key=f"repeat_violation_{student_id}",
+                metadata={
+                    'late_returns_30d': late_returns_30d,
+                    'unauthorized_exits_30d': unauthorized_exits_30d,
+                    'missing_returns_30d': missing_returns_30d,
+                    'night_movements_30d': night_movements_30d,
+                    'risk_score': risk_score,
+                    'risk_level': risk_level
+                }
+            )
+
+        if risk_level == 'high':
+            create_security_agentic_alert(
+                cursor,
+                alert_type='risk_escalation',
+                severity='critical',
+                title='High Security Risk Student',
+                message=(
+                    f"{student.get('student_name')} ({student.get('roll_number')}) is marked HIGH risk "
+                    f"with score {risk_score}."
+                ),
+                student_id=student_id,
+                detection_key=f"risk_escalation_{student_id}",
+                metadata={'risk_score': risk_score, 'risk_level': risk_level}
+            )
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+def security_monitor_worker():
+    """Background worker that continuously runs security monitoring"""
+    print(f"Security Monitoring Agent started (interval={SECURITY_MONITOR_INTERVAL_SECONDS}s)")
+    while True:
+        try:
+            process_security_monitoring_cycle()
+        except Exception as e:
+            print(f"Security monitor cycle error: {e}")
+        time_module.sleep(SECURITY_MONITOR_INTERVAL_SECONDS)
+
+
+def start_security_monitor_agent():
+    """Start security monitoring thread once"""
+    global SECURITY_MONITOR_THREAD_STARTED
+
+    if not SECURITY_MONITOR_ENABLED:
+        print("Security monitor disabled by configuration")
+        return
+
+    if SECURITY_MONITOR_THREAD_STARTED:
+        return
+
+    SECURITY_MONITOR_THREAD_STARTED = True
+    monitor_thread = threading.Thread(target=security_monitor_worker, daemon=True, name='security-monitor-agent')
+    monitor_thread.start()
+
+
+def create_leave_agentic_alert(cursor, alert_type, severity, title, message, related_leave_id=None, student_id=None, detection_key=None, metadata=None):
+    """Create or refresh leave monitoring alert"""
+    key = detection_key or f"{alert_type}_{student_id or 'global'}_{related_leave_id or 'na'}"
+    metadata_json = json.dumps(metadata) if metadata else None
+
+    cursor.execute("""
+        INSERT INTO leave_agentic_alerts
+        (related_leave_id, student_id, alert_type, severity, detection_key, title, message, metadata_json, is_read)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
+        ON DUPLICATE KEY UPDATE
+            severity = VALUES(severity),
+            title = VALUES(title),
+            message = VALUES(message),
+            metadata_json = VALUES(metadata_json),
+            is_read = 0,
+            updated_at = CURRENT_TIMESTAMP
+    """, (related_leave_id, student_id, alert_type, severity, key, title, message, metadata_json))
+
+
+def get_consecutive_day_streak(date_values):
+    """Return max streak length for sorted distinct date values"""
+    if not date_values:
+        return 0
+
+    streak = 1
+    max_streak = 1
+    for idx in range(1, len(date_values)):
+        prev_date = date_values[idx - 1]
+        cur_date = date_values[idx]
+        if (cur_date - prev_date).days == 1:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 1
+    return max_streak
+
+
+def generate_leave_recommendations(cursor):
+    """Generate recommendations from leave monitoring metrics"""
+    recommendations = []
+
+    cursor.execute("""
+        SELECT COUNT(*) AS pending_long
+        FROM leave_requests
+        WHERE status = 'pending'
+          AND TIMESTAMPDIFF(HOUR, created_at, NOW()) >= %s
+    """, (LEAVE_PENDING_SLA_HOURS,))
+    pending_long = int((cursor.fetchone() or {}).get('pending_long') or 0)
+    if pending_long > 0:
+        recommendations.append({
+            'type': 'approval_backlog',
+            'severity': 'high',
+            'message': f'{pending_long} leave requests are pending for more than {LEAVE_PENDING_SLA_HOURS} hours. Consider assigning approval duties across wardens.'
+        })
+
+    cursor.execute("""
+        SELECT COUNT(*) AS frequent_students
+        FROM leave_monitoring
+        WHERE leave_count_last_30_days >= %s
+    """, (LEAVE_LIMIT_30_DAYS,))
+    frequent_students = int((cursor.fetchone() or {}).get('frequent_students') or 0)
+    if frequent_students > 0:
+        recommendations.append({
+            'type': 'student_support',
+            'severity': 'medium',
+            'message': f'{frequent_students} students crossed leave frequency limits in the last 30 days. Schedule mentoring/counseling review.'
+        })
+
+    return recommendations
+
+
+def get_important_hostel_event_dates(cursor):
+    """Read important hostel event dates from system settings.
+
+    Supported formats in `setting_value`:
+    - JSON array: ["2026-03-10", "2026-03-15"]
+    - CSV string: 2026-03-10,2026-03-15
+    """
+    cursor.execute("""
+        SELECT setting_value
+        FROM system_settings
+        WHERE setting_key = 'important_hostel_event_dates'
+        LIMIT 1
+    """)
+    row = cursor.fetchone()
+    if not row or not row.get('setting_value'):
+        return set()
+
+    raw = str(row.get('setting_value')).strip()
+    items = []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            items = [str(item).strip() for item in parsed]
+        else:
+            items = [value.strip() for value in raw.split(',') if value.strip()]
+    except Exception:
+        items = [value.strip() for value in raw.split(',') if value.strip()]
+
+    event_dates = set()
+    for item in items:
+        try:
+            event_dates.add(datetime.strptime(item, '%Y-%m-%d').date())
+        except Exception:
+            continue
+    return event_dates
+
+
+def process_leave_monitoring_cycle():
+    """Autonomous monitoring cycle for internal leave management"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor(dictionary=True)
+    now_time = datetime.now()
+    today = now_time.date()
+    important_event_dates = get_important_hostel_event_dates(cursor)
+
+    cursor.execute("""
+        SELECT lr.*, s.roll_number, u.name AS student_name
+        FROM leave_requests lr
+        JOIN students s ON lr.student_id = s.id
+        JOIN users u ON s.user_id = u.id
+        WHERE lr.status IN ('pending', 'approved', 'active')
+    """)
+    leaves = cursor.fetchall() or []
+
+    for leave in leaves:
+        leave_id = leave['id']
+        student_id = leave['student_id']
+
+        if leave['status'] == 'pending':
+            pending_hours = (now_time - leave['created_at']).total_seconds() / 3600 if leave.get('created_at') else 0
+            if pending_hours >= LEAVE_PENDING_SLA_HOURS:
+                create_leave_agentic_alert(
+                    cursor,
+                    alert_type='pending_too_long',
+                    severity='high',
+                    title=f'Pending Leave > {LEAVE_PENDING_SLA_HOURS}h',
+                    message=f"Leave request #{leave_id} for {leave.get('student_name')} is pending for {round(pending_hours, 1)} hours.",
+                    related_leave_id=leave_id,
+                    student_id=student_id,
+                    detection_key=f'pending_leave_{leave_id}',
+                    metadata={'pending_hours': round(pending_hours, 1)}
+                )
+                cursor.execute(
+                    "UPDATE leave_requests SET pending_alert_sent_at = COALESCE(pending_alert_sent_at, NOW()) WHERE id = %s",
+                    (leave_id,)
+                )
+
+            # Pending request past leave end date is expired.
+            if leave.get('to_date') and today > leave['to_date']:
+                cursor.execute(
+                    "UPDATE leave_requests SET status = 'expired', expired_at = NOW(), ai_flagged = 1, ai_flag_reason = %s WHERE id = %s",
+                    ('Pending request expired without approval', leave_id)
+                )
+
+        if leave['status'] == 'approved' and leave.get('from_date') and leave.get('to_date'):
+            if leave['from_date'] <= today <= leave['to_date']:
+                cursor.execute(
+                    "UPDATE leave_requests SET status = 'active', active_at = COALESCE(active_at, NOW()) WHERE id = %s",
+                    (leave_id,)
+                )
+            elif today > leave['to_date']:
+                cursor.execute(
+                    "UPDATE leave_requests SET status = 'completed', completed_at = COALESCE(completed_at, NOW()) WHERE id = %s",
+                    (leave_id,)
+                )
+
+        if leave['status'] == 'active' and leave.get('to_date') and today > leave['to_date']:
+            cursor.execute(
+                "UPDATE leave_requests SET status = 'completed', completed_at = COALESCE(completed_at, NOW()) WHERE id = %s",
+                (leave_id,)
+            )
+
+    cursor.execute("""
+        SELECT s.id AS student_id, u.name AS student_name, s.roll_number,
+               COUNT(lr.id) AS leave_count_30d,
+               SUM(lr.total_days) AS leave_days_30d,
+               AVG(lr.total_days) AS avg_days,
+               SUM(CASE WHEN lr.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+               SUM(CASE WHEN lr.status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+        FROM students s
+        JOIN users u ON s.user_id = u.id
+        LEFT JOIN leave_requests lr ON lr.student_id = s.id
+            AND lr.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        GROUP BY s.id, u.name, s.roll_number
+    """)
+    student_metrics = cursor.fetchall() or []
+
+    for metric in student_metrics:
+        student_id = metric['student_id']
+        leave_count = int(metric.get('leave_count_30d') or 0)
+        avg_days = float(metric.get('avg_days') or 0)
+
+        cursor.execute("""
+            SELECT from_date
+            FROM leave_requests
+            WHERE student_id = %s
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            ORDER BY from_date ASC
+        """, (student_id,))
+        date_rows = cursor.fetchall() or []
+        date_values = sorted(list({row['from_date'] for row in date_rows if row.get('from_date')}))
+        streak = get_consecutive_day_streak(date_values)
+
+        cursor.execute("""
+            SELECT MAX(day_count) AS same_day_max
+            FROM (
+                SELECT from_date, COUNT(*) AS day_count
+                FROM leave_requests
+                WHERE student_id = %s
+                  AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                GROUP BY from_date
+            ) daily
+        """, (student_id,))
+        same_day_max = int((cursor.fetchone() or {}).get('same_day_max') or 0)
+
+        cursor.execute("""
+            SELECT COUNT(*) AS weekday_leaves
+            FROM leave_requests
+            WHERE student_id = %s
+              AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+              AND DAYOFWEEK(from_date) BETWEEN 2 AND 6
+              AND status IN ('approved', 'active', 'completed')
+        """, (student_id,))
+        weekday_leaves = int((cursor.fetchone() or {}).get('weekday_leaves') or 0)
+
+        alert_level = 'low'
+        if leave_count >= LEAVE_LIMIT_30_DAYS:
+            alert_level = 'high'
+            create_leave_agentic_alert(
+                cursor,
+                alert_type='limit_exceeded',
+                severity='high',
+                title='Leave Limit Exceeded',
+                message=f"{metric.get('student_name')} ({metric.get('roll_number')}) has {leave_count} leave requests in 30 days.",
+                student_id=student_id,
+                detection_key=f'leave_limit_{student_id}',
+                metadata={'leave_count_30d': leave_count}
+            )
+
+        if same_day_max >= 2:
+            alert_level = 'high'
+            create_leave_agentic_alert(
+                cursor,
+                alert_type='suspicious_pattern',
+                severity='high',
+                title='Multiple Same-Day Leave Requests',
+                message=f"{metric.get('student_name')} submitted {same_day_max} leave requests on the same day in the last 30 days.",
+                student_id=student_id,
+                detection_key=f'same_day_leave_{student_id}',
+                metadata={'same_day_max': same_day_max}
+            )
+
+        if streak >= 4:
+            alert_level = 'critical'
+            create_leave_agentic_alert(
+                cursor,
+                alert_type='suspicious_pattern',
+                severity='critical',
+                title='Repeated Daily Leave Pattern',
+                message=f"{metric.get('student_name')} has a {streak}-day consecutive leave request streak.",
+                student_id=student_id,
+                detection_key=f'daily_streak_{student_id}',
+                metadata={'streak_days': streak}
+            )
+
+        if weekday_leaves >= 4:
+            create_leave_agentic_alert(
+                cursor,
+                alert_type='attendance_conflict',
+                severity='medium',
+                title='Attendance Conflict Pattern',
+                message=f"{metric.get('student_name')} has {weekday_leaves} weekday leaves in 30 days. Review for class/CRT/activity attendance conflict.",
+                student_id=student_id,
+                detection_key=f'attendance_conflict_{student_id}',
+                metadata={'weekday_leaves': weekday_leaves}
+            )
+
+        if important_event_dates:
+            cursor.execute("""
+                SELECT from_date, to_date
+                FROM leave_requests
+                WHERE student_id = %s
+                  AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            """, (student_id,))
+            leave_ranges = cursor.fetchall() or []
+
+            overlap_count = 0
+            for leave_range in leave_ranges:
+                start_date = leave_range.get('from_date')
+                end_date = leave_range.get('to_date')
+                if not start_date or not end_date:
+                    continue
+                for event_date in important_event_dates:
+                    if start_date <= event_date <= end_date:
+                        overlap_count += 1
+                        break
+
+            if overlap_count > 0:
+                create_leave_agentic_alert(
+                    cursor,
+                    alert_type='suspicious_pattern',
+                    severity='high',
+                    title='Leave During Important Hostel Event',
+                    message=f"{metric.get('student_name')} has {overlap_count} leave requests overlapping important hostel event dates.",
+                    student_id=student_id,
+                    detection_key=f'event_overlap_{student_id}',
+                    metadata={'event_overlap_count': overlap_count}
+                )
+
+        cursor.execute("""
+            INSERT INTO leave_monitoring
+            (student_id, leave_type, leave_count_last_30_days, leave_count_last_60_days, leave_count_last_90_days,
+             leave_count_this_semester, average_days_per_leave, frequency_alert_level, flagged_by_ai)
+            VALUES (%s, 'college_leave', %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                leave_count_last_30_days = VALUES(leave_count_last_30_days),
+                leave_count_last_60_days = VALUES(leave_count_last_60_days),
+                leave_count_last_90_days = VALUES(leave_count_last_90_days),
+                leave_count_this_semester = VALUES(leave_count_this_semester),
+                average_days_per_leave = VALUES(average_days_per_leave),
+                frequency_alert_level = VALUES(frequency_alert_level),
+                flagged_by_ai = VALUES(flagged_by_ai),
+                last_updated = CURRENT_TIMESTAMP
+        """, (
+            student_id,
+            leave_count,
+            leave_count,
+            leave_count,
+            leave_count,
+            avg_days,
+            alert_level,
+            1 if alert_level in ('high', 'critical') else 0
+        ))
+
+    for idx, rec in enumerate(generate_leave_recommendations(cursor), start=1):
+        create_leave_agentic_alert(
+            cursor,
+            alert_type='recommendation',
+            severity=rec['severity'],
+            title='Leave Monitoring Recommendation',
+            message=rec['message'],
+            detection_key=f"leave_reco_{idx}_{datetime.now().strftime('%Y_%W')}",
+            metadata={'type': rec['type']}
+        )
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+def leave_monitor_worker():
+    """Background worker that continuously monitors leave requests"""
+    print(f"Leave Agentic Monitor started (interval={LEAVE_MONITOR_INTERVAL_SECONDS}s)")
+    while True:
+        try:
+            process_leave_monitoring_cycle()
+        except Exception as e:
+            print(f"Leave monitor cycle error: {e}")
+        time_module.sleep(LEAVE_MONITOR_INTERVAL_SECONDS)
+
+
+def start_leave_monitor_agent():
+    """Start autonomous leave monitoring thread once"""
+    global LEAVE_MONITOR_THREAD_STARTED
+
+    if not LEAVE_MONITOR_ENABLED:
+        print("Leave monitor disabled by configuration")
+        return
+
+    if LEAVE_MONITOR_THREAD_STARTED:
+        return
+
+    LEAVE_MONITOR_THREAD_STARTED = True
+    monitor_thread = threading.Thread(target=leave_monitor_worker, daemon=True, name='leave-monitor-agent')
+    monitor_thread.start()
+
+
+def classify_complaint_priority(category, title, description):
+    """Classify complaint as high/medium/low priority"""
+    text = f"{category or ''} {title or ''} {description or ''}".lower()
+
+    high_keywords = ['electricity', 'electrical', 'power', 'water', 'leak', 'security', 'shock', 'sparking']
+    medium_keywords = ['maintenance', 'furniture', 'carpentry', 'room', 'door', 'window', 'plumbing', 'hvac']
+
+    if category in ['electrical', 'plumbing', 'security'] or any(k in text for k in high_keywords):
+        return 'high'
+    if category in ['furniture', 'carpentry', 'hvac'] or any(k in text for k in medium_keywords):
+        return 'medium'
+    return 'low'
+
+
+def create_complaint_agentic_alert(cursor, alert_type, severity, title, message, complaint_id=None, alert_key=None, metadata=None):
+    """Create or refresh a complaint monitoring alert"""
+    key = alert_key or f"{alert_type}_{complaint_id or 'global'}"
+    metadata_json = json.dumps(metadata) if metadata else None
+
+    cursor.execute("""
+        INSERT INTO complaint_agentic_alerts
+        (complaint_id, alert_type, severity, alert_key, title, message, metadata_json, is_read)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, 0)
+        ON DUPLICATE KEY UPDATE
+            severity = VALUES(severity),
+            title = VALUES(title),
+            message = VALUES(message),
+            metadata_json = VALUES(metadata_json),
+            is_read = 0,
+            updated_at = CURRENT_TIMESTAMP
+    """, (complaint_id, alert_type, severity, key, title, message, metadata_json))
+
+
+def generate_complaint_recommendations(cursor):
+    """Generate dynamic recommendations from live complaint load"""
+    recommendations = []
+
+    cursor.execute("""
+        SELECT COUNT(*) AS open_count
+        FROM complaints
+        WHERE status IN ('pending', 'assigned', 'in_progress', 'delayed')
+    """)
+    open_count = int((cursor.fetchone() or {}).get('open_count') or 0)
+
+    cursor.execute("""
+        SELECT COUNT(*) AS active_techs
+        FROM technicians
+        WHERE availability_status IN ('available', 'busy')
+    """)
+    active_techs = int((cursor.fetchone() or {}).get('active_techs') or 0)
+
+    capacity_threshold = max(active_techs * 4, 8)
+    if open_count > capacity_threshold:
+        recommendations.append({
+            'type': 'staffing',
+            'severity': 'high',
+            'message': f'Open complaints ({open_count}) exceed current technician capacity ({active_techs} active). Consider adding technicians or redistributing shifts.'
+        })
+
+    cursor.execute("""
+        SELECT category, COUNT(*) AS total
+        FROM complaints
+        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+        GROUP BY category
+        ORDER BY total DESC
+        LIMIT 1
+    """)
+    top_category = cursor.fetchone()
+    if top_category and int(top_category.get('total') or 0) >= 8:
+        recommendations.append({
+            'type': 'infrastructure',
+            'severity': 'medium',
+            'message': f"Recurring '{top_category['category']}' issues detected ({top_category['total']} complaints in 14 days). Plan preventive infrastructure maintenance."
+        })
+
+    return recommendations
+
+
+def process_complaint_monitoring_cycle():
+    """Autonomous monitoring cycle for complaint operations"""
+    connection = get_db_connection()
+    if not connection:
+        return
+
+    cursor = connection.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT c.id, c.category, c.title, c.description, c.status, c.priority, c.ai_priority,
+               c.assigned_technician_id, c.assigned_at, c.created_at, c.resolved_at,
+               c.delayed_at, c.escalated_at, c.last_technician_update_at,
+               c.last_reminder_sent_at, c.reminder_count,
+               s.roll_number, r.room_number, b.block_name,
+               tech.name AS technician_name
+        FROM complaints c
+        JOIN students s ON c.student_id = s.id
+        LEFT JOIN rooms r ON s.room_id = r.id
+        LEFT JOIN blocks b ON r.block_id = b.id
+        LEFT JOIN users tech ON c.assigned_technician_id = tech.id
+        WHERE c.status IN ('pending', 'assigned', 'in_progress', 'delayed')
+    """)
+    open_complaints = cursor.fetchall() or []
+
+    now_time = datetime.now()
+    for complaint in open_complaints:
+        complaint_id = complaint['id']
+        complaint_age_hours = (now_time - complaint['created_at']).total_seconds() / 3600 if complaint.get('created_at') else 0
+
+        auto_priority = classify_complaint_priority(complaint.get('category'), complaint.get('title'), complaint.get('description'))
+        if complaint.get('ai_priority') != auto_priority:
+            cursor.execute(
+                "UPDATE complaints SET ai_priority = %s, priority = %s WHERE id = %s",
+                (auto_priority, auto_priority, complaint_id)
+            )
+
+        if auto_priority == 'high':
+            create_complaint_agentic_alert(
+                cursor,
+                alert_type='critical',
+                severity='critical',
+                title=f"Critical Complaint #{complaint_id}",
+                message=f"High-priority complaint raised in Room {complaint.get('room_number') or 'N/A'} ({complaint.get('block_name') or 'Unknown block'}).",
+                complaint_id=complaint_id,
+                alert_key=f"critical_{complaint_id}",
+                metadata={'category': complaint.get('category')}
+            )
+
+        if not complaint.get('assigned_technician_id') and complaint_age_hours >= COMPLAINT_ASSIGNMENT_SLA_HOURS:
+            create_complaint_agentic_alert(
+                cursor,
+                alert_type='unassigned_delay',
+                severity='high',
+                title=f"Unassigned Complaint #{complaint_id}",
+                message=f"Complaint #{complaint_id} has not been assigned for over {COMPLAINT_ASSIGNMENT_SLA_HOURS} hours.",
+                complaint_id=complaint_id,
+                alert_key=f"unassigned_delay_{complaint_id}",
+                metadata={'age_hours': round(complaint_age_hours, 1)}
+            )
+
+        if complaint_age_hours >= COMPLAINT_DELAY_HOURS and complaint.get('status') != 'delayed':
+            cursor.execute(
+                "UPDATE complaints SET status = 'delayed', delayed_at = NOW() WHERE id = %s",
+                (complaint_id,)
+            )
+            create_complaint_agentic_alert(
+                cursor,
+                alert_type='delayed',
+                severity='high',
+                title=f"Complaint Delayed #{complaint_id}",
+                message=f"Complaint #{complaint_id} has remained unresolved for over {COMPLAINT_DELAY_HOURS} hours and is marked delayed.",
+                complaint_id=complaint_id,
+                alert_key=f"delayed_{complaint_id}",
+                metadata={'age_hours': round(complaint_age_hours, 1)}
+            )
+
+        if complaint_age_hours >= COMPLAINT_ESCALATION_HOURS and not complaint.get('escalated_at'):
+            cursor.execute(
+                "UPDATE complaints SET escalated_at = NOW() WHERE id = %s",
+                (complaint_id,)
+            )
+            create_complaint_agentic_alert(
+                cursor,
+                alert_type='escalated',
+                severity='critical',
+                title=f"Complaint Escalated #{complaint_id}",
+                message=f"Complaint #{complaint_id} exceeded {COMPLAINT_ESCALATION_HOURS} hours unresolved and has been escalated to the warden.",
+                complaint_id=complaint_id,
+                alert_key=f"escalated_{complaint_id}",
+                metadata={'age_hours': round(complaint_age_hours, 1)}
+            )
+
+        if complaint.get('assigned_technician_id') and complaint.get('assigned_at'):
+            has_technician_updated = bool(complaint.get('last_technician_update_at'))
+            hours_since_assignment = (now_time - complaint['assigned_at']).total_seconds() / 3600
+            hours_since_last_reminder = None
+            if complaint.get('last_reminder_sent_at'):
+                hours_since_last_reminder = (now_time - complaint['last_reminder_sent_at']).total_seconds() / 3600
+
+            if (
+                not has_technician_updated and
+                hours_since_assignment >= COMPLAINT_TECH_REMINDER_HOURS and
+                (hours_since_last_reminder is None or hours_since_last_reminder >= COMPLAINT_TECH_REMINDER_HOURS)
+            ):
+                cursor.execute("""
+                    UPDATE complaints
+                    SET reminder_count = COALESCE(reminder_count, 0) + 1,
+                        last_reminder_sent_at = NOW()
+                    WHERE id = %s
+                """, (complaint_id,))
+
+                create_complaint_agentic_alert(
+                    cursor,
+                    alert_type='technician_reminder',
+                    severity='medium',
+                    title=f"Technician Reminder Needed #{complaint_id}",
+                    message=f"No technician status update for complaint #{complaint_id} after assignment. Reminder generated for {complaint.get('technician_name') or 'assigned technician'}.",
+                    complaint_id=complaint_id,
+                    alert_key=f"tech_reminder_{complaint_id}_{int(hours_since_assignment)}",
+                    metadata={'technician_name': complaint.get('technician_name')}
+                )
+
+    cursor.execute("""
+        SELECT r.room_number, b.block_name, COUNT(*) AS total
+        FROM complaints c
+        JOIN students s ON c.student_id = s.id
+        LEFT JOIN rooms r ON s.room_id = r.id
+        LEFT JOIN blocks b ON r.block_id = b.id
+        WHERE c.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY r.room_number, b.block_name
+        HAVING COUNT(*) >= 4
+        ORDER BY total DESC
+        LIMIT 5
+    """)
+    hotspot_rooms = cursor.fetchall() or []
+    for item in hotspot_rooms:
+        room_label = f"Room {item.get('room_number') or 'N/A'} - {item.get('block_name') or 'Unknown'}"
+        create_complaint_agentic_alert(
+            cursor,
+            alert_type='anomaly',
+            severity='high',
+            title='Complaint Hotspot Detected',
+            message=f"{room_label} generated {item['total']} complaints in the last 7 days.",
+            alert_key=f"anomaly_room_{item.get('room_number')}_{item.get('block_name')}",
+            metadata={'room_number': item.get('room_number'), 'block_name': item.get('block_name'), 'count': item['total']}
+        )
+
+    cursor.execute("""
+        SELECT category, COUNT(*) AS total
+        FROM complaints
+        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY category
+        HAVING COUNT(*) >= 10
+        ORDER BY total DESC
+        LIMIT 3
+    """)
+    repeated_issues = cursor.fetchall() or []
+    for item in repeated_issues:
+        create_complaint_agentic_alert(
+            cursor,
+            alert_type='anomaly',
+            severity='medium',
+            title='Repeated Issue Pattern',
+            message=f"Repeated '{item['category']}' complaints detected ({item['total']} in 7 days).",
+            alert_key=f"anomaly_category_{item['category']}",
+            metadata={'category': item['category'], 'count': item['total']}
+        )
+
+    for idx, rec in enumerate(generate_complaint_recommendations(cursor), start=1):
+        create_complaint_agentic_alert(
+            cursor,
+            alert_type='recommendation',
+            severity=rec['severity'],
+            title='Operational Recommendation',
+            message=rec['message'],
+            alert_key=f"recommendation_{idx}_{datetime.now().strftime('%Y_%W')}",
+            metadata={'type': rec['type']}
+        )
+
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+def complaint_monitor_worker():
+    """Background worker that continuously monitors complaints"""
+    print(f"Complaint Agentic Monitor started (interval={COMPLAINT_MONITOR_INTERVAL_SECONDS}s)")
+    while True:
+        try:
+            process_complaint_monitoring_cycle()
+        except Exception as e:
+            print(f"Complaint monitor cycle error: {e}")
+        time_module.sleep(COMPLAINT_MONITOR_INTERVAL_SECONDS)
+
+
+def start_complaint_monitor_agent():
+    """Start autonomous complaint monitoring thread once"""
+    global COMPLAINT_MONITOR_THREAD_STARTED
+
+    if not COMPLAINT_MONITOR_ENABLED:
+        print("Complaint monitor disabled by configuration")
+        return
+
+    if COMPLAINT_MONITOR_THREAD_STARTED:
+        return
+
+    COMPLAINT_MONITOR_THREAD_STARTED = True
+    monitor_thread = threading.Thread(target=complaint_monitor_worker, daemon=True, name='complaint-monitor-agent')
+    monitor_thread.start()
+
+
 def get_student_outpass_metrics(cursor, student_id, exclude_outpass_id=None):
     """Collect outpass behavior metrics for contextual risk analysis"""
     query = """
@@ -296,12 +1532,30 @@ def get_monitor_state(expected_return_time, now_time, out_date=None):
     return 'overdue', late_minutes
 
 
+def format_late_duration(late_minutes):
+    """Format delay minutes into readable duration (e.g., 6:05 hours, 1 day 2:30 hours)."""
+    total_minutes = int(late_minutes or 0)
+    if total_minutes <= 0:
+        return '0:00 hours'
+
+    days = total_minutes // (24 * 60)
+    remaining = total_minutes % (24 * 60)
+    hours = remaining // 60
+    minutes = remaining % 60
+
+    if days > 0:
+        day_label = 'day' if days == 1 else 'days'
+        return f"{days} {day_label} {hours}:{minutes:02d} hours"
+    return f"{hours}:{minutes:02d} hours"
+
+
 def send_outpass_overdue_email_student(student_email, student_name, outpass_id, late_minutes, expected_return_time, risk_level):
     """Send overdue alert email to student"""
     if not student_email:
         return False
 
     expected_return_str = expected_return_time.strftime('%d %b %Y, %I:%M %p') if expected_return_time else 'N/A'
+    late_duration_str = format_late_duration(late_minutes)
     subject = f"⚠️ Outpass Overdue Alert - OP-{outpass_id}"
     html_body = f"""
     <html>
@@ -311,7 +1565,7 @@ def send_outpass_overdue_email_student(student_email, student_name, outpass_id, 
         <p>Your approved outpass <strong>OP-{outpass_id}</strong> has crossed the allowed return time.</p>
         <ul>
           <li><strong>Expected Return:</strong> {expected_return_str}</li>
-          <li><strong>Current Delay:</strong> {late_minutes} minutes</li>
+                    <li><strong>Current Delay:</strong> {late_duration_str}</li>
           <li><strong>Risk Level:</strong> {risk_level.upper()}</li>
         </ul>
         <p>Please return to hostel immediately and contact the warden office if there is an emergency.</p>
@@ -328,6 +1582,7 @@ def send_outpass_overdue_email_parent(parent_email, parent_name, student_name, o
         return False
 
     expected_return_str = expected_return_time.strftime('%d %b %Y, %I:%M %p') if expected_return_time else 'N/A'
+    late_duration_str = format_late_duration(late_minutes)
     subject = f"⚠️ Parent Alert: Delayed Return for {student_name}"
     html_body = f"""
     <html>
@@ -338,7 +1593,7 @@ def send_outpass_overdue_email_parent(parent_email, parent_name, student_name, o
         <ul>
           <li><strong>Outpass ID:</strong> OP-{outpass_id}</li>
           <li><strong>Expected Return:</strong> {expected_return_str}</li>
-          <li><strong>Current Delay:</strong> {late_minutes} minutes</li>
+                    <li><strong>Current Delay:</strong> {late_duration_str}</li>
           <li><strong>Risk Level:</strong> {risk_level.upper()}</li>
         </ul>
         <p>Hostel warden has been notified and monitoring is active.</p>
@@ -2312,6 +3567,12 @@ def create_complaint():
         
         # Generate title from description (first 50 chars)
         title = description[:50] + ('...' if len(description) > 50 else '')
+        auto_priority = classify_complaint_priority(category, title, description)
+        if priority not in ['low', 'medium', 'high']:
+            priority = auto_priority
+        else:
+            # Autonomous classifier takes precedence for consistency.
+            priority = auto_priority
         
         # Try to find and assign an available technician
         assigned_technician_id = None
@@ -2341,16 +3602,29 @@ def create_complaint():
         # Insert complaint with assignment details
         query = """
             INSERT INTO complaints 
-            (student_id, block_id, category, title, description, location, priority, status, assigned_technician_id, assigned_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (student_id, block_id, category, title, description, location, priority, ai_priority, status, assigned_technician_id, assigned_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         cursor.execute(query, (
-            student['id'], block_id, category, title, description, location, priority, 
+            student['id'], block_id, category, title, description, location, priority, auto_priority,
             complaint_status, assigned_technician_id, assigned_at
         ))
         connection.commit()
         
         complaint_id = cursor.lastrowid
+
+        if auto_priority == 'high':
+            create_complaint_agentic_alert(
+                cursor,
+                alert_type='critical',
+                severity='critical',
+                title=f"Critical Complaint #{complaint_id}",
+                message=f"High-priority complaint #{complaint_id} was submitted and requires immediate attention.",
+                complaint_id=complaint_id,
+                alert_key=f"critical_{complaint_id}",
+                metadata={'category': category}
+            )
+            connection.commit()
         
         cursor.close()
         connection.close()
@@ -2804,7 +4078,8 @@ def get_pending_leaves():
                    u.name as student_name, 
                    s.roll_number,
                    r.room_number,
-                   b.block_name
+                 b.block_name,
+                 TIMESTAMPDIFF(HOUR, lr.created_at, NOW()) AS pending_hours
             FROM leave_requests lr
             JOIN students s ON lr.student_id = s.id
             JOIN users u ON s.user_id = u.id
@@ -2814,6 +4089,8 @@ def get_pending_leaves():
         """
         cursor.execute(query)
         leaves = cursor.fetchall()
+
+        leaves = [serialize_row(row) for row in leaves]
         
         cursor.close()
         connection.close()
@@ -2853,13 +4130,21 @@ def approve_leave(leave_id):
             connection.close()
             return jsonify({'success': False, 'message': 'Leave request not found'}), 404
         
-        # Update leave status to approved
+        # Auto-switch to active when approved within leave period.
+        approved_status = 'approved'
+        leave_from = leave.get('from_date')
+        leave_to = leave.get('to_date')
+        today = datetime.now().date()
+        if leave_from and leave_to and leave_from <= today <= leave_to:
+            approved_status = 'active'
+
+        # Update leave status
         update_query = """
             UPDATE leave_requests 
-            SET status = 'approved', approved_by = %s, approved_at = NOW()
+            SET status = %s, approved_by = %s, approved_at = NOW(), active_at = CASE WHEN %s = 'active' THEN NOW() ELSE active_at END
             WHERE id = %s
         """
-        cursor.execute(update_query, (approved_by, leave_id))
+        cursor.execute(update_query, (approved_status, approved_by, approved_status, leave_id))
         connection.commit()
         
         cursor.close()
@@ -2879,7 +4164,7 @@ def approve_leave(leave_id):
         else:
             print("Leave approval email skipped: student email missing")
 
-        return jsonify({'success': True, 'message': 'Leave approved', 'email_sent': email_sent}), 200
+        return jsonify({'success': True, 'message': f'Leave {approved_status}', 'email_sent': email_sent, 'status': approved_status}), 200
         
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
@@ -2978,6 +4263,379 @@ def get_leave_history(roll_number):
 
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/leaves/agentic-alerts', methods=['GET'])
+def get_warden_leave_agentic_alerts():
+    """Get leave alerts generated by autonomous monitoring"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        limit = int(request.args.get('limit', 100))
+        limit = 100 if limit <= 0 or limit > 200 else limit
+
+        cursor.execute("""
+            SELECT la.*, lr.status AS leave_status, lr.leave_type, lr.from_date, lr.to_date,
+                   u.name AS student_name, s.roll_number
+            FROM leave_agentic_alerts la
+            LEFT JOIN leave_requests lr ON la.related_leave_id = lr.id
+            LEFT JOIN students s ON la.student_id = s.id
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY la.updated_at DESC
+            LIMIT %s
+        """, (limit,))
+        rows = cursor.fetchall() or []
+
+        alerts = []
+        for row in rows:
+            item = serialize_row(row)
+            if row.get('metadata_json'):
+                try:
+                    item['metadata'] = row['metadata_json'] if isinstance(row['metadata_json'], dict) else json.loads(row['metadata_json'])
+                except Exception:
+                    item['metadata'] = None
+            alerts.append(item)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': alerts, 'count': len(alerts)}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+def fetch_weekly_leave_insights_data(cursor):
+    """Shared query set for leave insights payload"""
+    cursor.execute("""
+        SELECT s.id AS student_id, u.name AS student_name, s.roll_number, COUNT(*) AS leave_count
+        FROM leave_requests lr
+        JOIN students s ON lr.student_id = s.id
+        JOIN users u ON s.user_id = u.id
+        WHERE lr.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY s.id, u.name, s.roll_number
+        ORDER BY leave_count DESC
+        LIMIT 5
+    """)
+    top_students = cursor.fetchall() or []
+
+    cursor.execute("""
+        SELECT ROUND(AVG(total_days), 2) AS avg_leave_duration_days
+        FROM leave_requests
+        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    """)
+    avg_duration = (cursor.fetchone() or {}).get('avg_leave_duration_days') or 0
+
+    cursor.execute("""
+        SELECT DAYNAME(from_date) AS day_name, COUNT(*) AS total
+        FROM leave_requests
+        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY DAYNAME(from_date)
+        ORDER BY total DESC
+    """)
+    trends = cursor.fetchall() or []
+
+    return {
+        'students_highest_leave_frequency': [serialize_row(item) for item in top_students],
+        'average_leave_duration_days': avg_duration,
+        'leave_trends_by_day': [serialize_row(item) for item in trends]
+    }
+
+
+@app.route('/api/warden/leaves/insights/weekly', methods=['GET'])
+def get_weekly_leave_insights():
+    """Get weekly leave insights for warden dashboards"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        data = fetch_weekly_leave_insights_data(cursor)
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': data}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/leaves/agentic-monitor', methods=['GET'])
+def get_leave_agentic_monitor_payload():
+    """Combined payload for leave monitoring dashboard widgets"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
+                SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expired,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+                SUM(CASE WHEN status = 'pending' AND TIMESTAMPDIFF(HOUR, created_at, NOW()) >= %s THEN 1 ELSE 0 END) AS pending_too_long
+            FROM leave_requests
+        """, (LEAVE_PENDING_SLA_HOURS,))
+        summary = cursor.fetchone() or {}
+
+        cursor.execute("""
+            SELECT la.id, la.related_leave_id, la.student_id, la.alert_type, la.severity, la.title, la.message,
+                   la.created_at, la.updated_at, lr.status AS leave_status, u.name AS student_name, s.roll_number
+            FROM leave_agentic_alerts la
+            LEFT JOIN leave_requests lr ON la.related_leave_id = lr.id
+            LEFT JOIN students s ON la.student_id = s.id
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY la.updated_at DESC
+            LIMIT 20
+        """)
+        alerts = [serialize_row(row) for row in (cursor.fetchall() or [])]
+
+        # Show only newly requested leaves on the Leave page alert strip.
+        cursor.execute("""
+            SELECT lr.id AS leave_id, lr.student_id, lr.created_at, lr.leave_type, lr.from_date, lr.to_date,
+                   lr.status AS leave_status, u.name AS student_name, s.roll_number
+            FROM leave_requests lr
+            JOIN students s ON lr.student_id = s.id
+            JOIN users u ON s.user_id = u.id
+            WHERE lr.status = 'pending'
+            ORDER BY lr.created_at DESC
+            LIMIT 10
+        """)
+        new_request_rows = cursor.fetchall() or []
+        new_request_alerts = []
+        for row in new_request_rows:
+            item = serialize_row(row)
+            new_request_alerts.append({
+                'alert_type': 'new_leave_request',
+                'severity': 'medium',
+                'title': 'New Leave Request',
+                'message': (
+                    f"{item.get('student_name') or 'Student'} ({item.get('roll_number') or 'N/A'}) "
+                    f"requested {item.get('leave_type') or 'leave'} from {item.get('from_date')} to {item.get('to_date')}."
+                ),
+                'related_leave_id': item.get('leave_id'),
+                'student_id': item.get('student_id'),
+                'created_at': item.get('created_at'),
+                'leave_status': item.get('leave_status')
+            })
+
+        recommendations = generate_leave_recommendations(cursor)
+        weekly_insights = fetch_weekly_leave_insights_data(cursor)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'status_summary': summary,
+                'alerts': alerts,
+                'new_request_alerts': new_request_alerts,
+                'recommendations': recommendations,
+                'weekly_insights': weekly_insights
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/security/agentic-alerts', methods=['GET'])
+def get_warden_security_agentic_alerts():
+    """Get security alerts generated by Security Monitoring Agent"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        limit = int(request.args.get('limit', 100))
+        limit = 100 if limit <= 0 or limit > 200 else limit
+        unread_only = request.args.get('unread_only', 'false').lower() == 'true'
+
+        where_clause = "WHERE sa.is_read = 0" if unread_only else ""
+
+        cursor.execute("""
+            SELECT sa.*, u.name AS student_name, s.roll_number, o.status AS outpass_status,
+                   o.expected_return_time, o.actual_return_time
+            FROM security_agentic_alerts sa
+            LEFT JOIN students s ON sa.student_id = s.id
+            LEFT JOIN users u ON s.user_id = u.id
+            LEFT JOIN outpasses o ON sa.related_outpass_id = o.id
+            {where_clause}
+            ORDER BY sa.updated_at DESC
+            LIMIT %s
+        """.format(where_clause=where_clause), (limit,))
+        rows = cursor.fetchall() or []
+
+        cursor.execute("SELECT COUNT(*) AS unread_count FROM security_agentic_alerts WHERE is_read = 0")
+        unread_count = int((cursor.fetchone() or {}).get('unread_count') or 0)
+
+        alerts = []
+        for row in rows:
+            item = serialize_row(row)
+            if row.get('metadata_json'):
+                try:
+                    item['metadata'] = row['metadata_json'] if isinstance(row['metadata_json'], dict) else json.loads(row['metadata_json'])
+                except Exception:
+                    item['metadata'] = None
+            alerts.append(item)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': alerts, 'count': len(alerts), 'unread_count': unread_count}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/security/agentic-alerts/<int:alert_id>/acknowledge', methods=['POST'])
+def acknowledge_security_agentic_alert(alert_id):
+    """Mark one security alert as read/acknowledged"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor()
+        cursor.execute("UPDATE security_agentic_alerts SET is_read = 1 WHERE id = %s", (alert_id,))
+        connection.commit()
+
+        updated = cursor.rowcount
+        cursor.close()
+        connection.close()
+
+        if updated == 0:
+            return jsonify({'success': False, 'message': 'Security alert not found'}), 404
+
+        return jsonify({'success': True, 'message': 'Security alert acknowledged'}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/security/agentic-alerts/acknowledge-all', methods=['POST'])
+def acknowledge_all_security_agentic_alerts():
+    """Mark all unread security alerts as acknowledged"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor()
+        cursor.execute("UPDATE security_agentic_alerts SET is_read = 1 WHERE is_read = 0")
+        connection.commit()
+        updated = cursor.rowcount
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'message': f'Acknowledged {updated} security alerts', 'updated': updated}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/security/insights/weekly', methods=['GET'])
+def get_weekly_security_insights():
+    """Get weekly insights for security monitoring"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        insights = fetch_security_insights_data(cursor)
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': insights}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/security/agentic-monitor', methods=['GET'])
+def get_security_agentic_monitor_payload():
+    """Combined payload for Security Monitoring Agent dashboard widgets"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                SUM(CASE WHEN alert_type = 'late_return' THEN 1 ELSE 0 END) AS late_returns,
+                SUM(CASE WHEN alert_type = 'missing_return' THEN 1 ELSE 0 END) AS missing_students,
+                SUM(CASE WHEN alert_type = 'unauthorized_exit_attempt' THEN 1 ELSE 0 END) AS unauthorized_exit_attempts,
+                SUM(CASE WHEN alert_type = 'night_movement' THEN 1 ELSE 0 END) AS night_movements,
+                SUM(CASE WHEN severity IN ('high', 'critical') THEN 1 ELSE 0 END) AS high_priority_alerts
+            FROM security_agentic_alerts
+            WHERE updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        """)
+        status_summary = cursor.fetchone() or {}
+
+        cursor.execute("""
+            SELECT COUNT(*) AS high_risk_students
+            FROM security_student_risk_profiles
+            WHERE risk_level = 'high'
+        """)
+        high_risk_students = int((cursor.fetchone() or {}).get('high_risk_students') or 0)
+        status_summary['high_risk_students'] = high_risk_students
+
+        cursor.execute("""
+            SELECT sa.id, sa.alert_type, sa.severity, sa.title, sa.message, sa.student_id, sa.related_outpass_id,
+                   sa.created_at, sa.updated_at, u.name AS student_name, s.roll_number
+            FROM security_agentic_alerts sa
+            LEFT JOIN students s ON sa.student_id = s.id
+            LEFT JOIN users u ON s.user_id = u.id
+            ORDER BY sa.updated_at DESC
+            LIMIT 20
+        """)
+        alerts = [serialize_row(row) for row in (cursor.fetchall() or [])]
+
+        cursor.execute("""
+            SELECT srp.student_id, srp.risk_score, srp.risk_level, srp.violation_count_30d,
+                   u.name AS student_name, s.roll_number
+            FROM security_student_risk_profiles srp
+            JOIN students s ON srp.student_id = s.id
+            JOIN users u ON s.user_id = u.id
+            ORDER BY srp.risk_score DESC, srp.violation_count_30d DESC
+            LIMIT 10
+        """)
+        risk_profiles = [serialize_row(row) for row in (cursor.fetchall() or [])]
+
+        insights = fetch_security_insights_data(cursor)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'status_summary': status_summary,
+                'alerts': alerts,
+                'risk_profiles': risk_profiles,
+                'weekly_insights': insights
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/settings/colleges', methods=['GET'])
 def get_colleges():
     """Get colleges list"""
@@ -3219,12 +4877,13 @@ def get_all_complaints():
         cursor = connection.cursor(dictionary=True)
         
         query = """
-            SELECT c.*, 
+                 SELECT c.*, 
                    u.name as student_name, 
                    s.roll_number,
                    r.room_number,
                    b.block_name,
-                   tech.name as technician_name
+                     tech.name as technician_name,
+                     TIMESTAMPDIFF(HOUR, c.created_at, NOW()) AS age_hours
             FROM complaints c
             JOIN students s ON c.student_id = s.id
             JOIN users u ON s.user_id = u.id
@@ -3253,6 +4912,177 @@ def get_all_complaints():
         
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/complaints/agentic-alerts', methods=['GET'])
+def get_warden_complaint_agentic_alerts():
+    """Get complaint alerts generated by autonomous monitoring"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        limit = int(request.args.get('limit', 100))
+        limit = 100 if limit <= 0 or limit > 200 else limit
+
+        cursor.execute("""
+            SELECT a.*, c.status AS complaint_status, c.priority, c.category
+            FROM complaint_agentic_alerts a
+            LEFT JOIN complaints c ON a.complaint_id = c.id
+            ORDER BY a.updated_at DESC
+            LIMIT %s
+        """, (limit,))
+        rows = cursor.fetchall() or []
+
+        alerts = []
+        for row in rows:
+            item = serialize_row(row)
+            if row.get('metadata_json'):
+                try:
+                    item['metadata'] = row['metadata_json'] if isinstance(row['metadata_json'], dict) else json.loads(row['metadata_json'])
+                except Exception:
+                    item['metadata'] = None
+            alerts.append(item)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': alerts, 'count': len(alerts)}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/complaints/insights/weekly', methods=['GET'])
+def get_weekly_complaint_insights():
+    """Get weekly complaint insights for operations monitoring"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        insights = fetch_weekly_complaint_insights_data(cursor)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({
+            'success': True,
+            'data': insights
+        }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/complaints/agentic-monitor', methods=['GET'])
+def get_complaint_agentic_monitor_payload():
+    """Combined payload for real-time complaint monitoring dashboard widgets"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS newly_submitted,
+                SUM(CASE WHEN status IN ('assigned', 'in_progress') THEN 1 ELSE 0 END) AS in_progress,
+                SUM(CASE WHEN status IN ('resolved', 'closed') THEN 1 ELSE 0 END) AS resolved,
+                SUM(CASE WHEN status = 'delayed' THEN 1 ELSE 0 END) AS pending_too_long,
+                SUM(CASE WHEN status = 'delayed' AND escalated_at IS NOT NULL THEN 1 ELSE 0 END) AS escalated
+            FROM complaints
+        """)
+        status_summary = cursor.fetchone() or {}
+
+        cursor.execute("""
+            SELECT a.id, a.complaint_id, a.alert_type, a.severity, a.title, a.message, a.created_at, a.updated_at,
+                   c.status AS complaint_status
+            FROM complaint_agentic_alerts a
+            LEFT JOIN complaints c ON a.complaint_id = c.id
+            ORDER BY a.updated_at DESC
+            LIMIT 20
+        """)
+        alerts = [serialize_row(row) for row in (cursor.fetchall() or [])]
+
+        recommendations = generate_complaint_recommendations(cursor)
+        weekly_payload = fetch_weekly_complaint_insights_data(cursor)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'status_summary': status_summary,
+                'alerts': alerts,
+                'recommendations': recommendations,
+                'weekly_insights': weekly_payload
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+def fetch_weekly_complaint_insights_data(cursor):
+    """Shared query set used by complaint insights APIs"""
+    cursor.execute("""
+        SELECT category, COUNT(*) AS total
+        FROM complaints
+        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY category
+        ORDER BY total DESC
+        LIMIT 1
+    """)
+    top_category = cursor.fetchone() or {'category': None, 'total': 0}
+
+    cursor.execute("""
+        SELECT ROUND(AVG(TIMESTAMPDIFF(HOUR, created_at, resolved_at)), 2) AS avg_resolution_hours
+        FROM complaints
+        WHERE resolved_at IS NOT NULL
+          AND resolved_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    """)
+    avg_resolution = (cursor.fetchone() or {}).get('avg_resolution_hours')
+
+    cursor.execute("""
+        SELECT u.id AS technician_id,
+               u.name AS technician_name,
+               COUNT(c.id) AS total_assigned,
+               SUM(CASE WHEN c.status IN ('resolved', 'closed') THEN 1 ELSE 0 END) AS total_resolved,
+               ROUND(AVG(CASE WHEN c.resolved_at IS NOT NULL THEN TIMESTAMPDIFF(HOUR, c.assigned_at, c.resolved_at) END), 2) AS avg_resolution_hours
+        FROM users u
+        JOIN technicians t ON t.user_id = u.id
+        LEFT JOIN complaints c ON c.assigned_technician_id = u.id
+            AND c.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY u.id, u.name
+        ORDER BY total_resolved DESC, total_assigned DESC
+        LIMIT 10
+    """)
+    technician_performance = cursor.fetchall() or []
+
+    cursor.execute("""
+        SELECT
+            COUNT(*) AS total_open,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS newly_submitted,
+            SUM(CASE WHEN status IN ('assigned', 'in_progress') THEN 1 ELSE 0 END) AS in_progress,
+            SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved,
+            SUM(CASE WHEN status = 'delayed' THEN 1 ELSE 0 END) AS pending_too_long
+        FROM complaints
+        WHERE status IN ('pending', 'assigned', 'in_progress', 'delayed', 'resolved')
+    """)
+    snapshot = cursor.fetchone() or {}
+
+    return {
+        'most_frequent_complaint_type': top_category,
+        'average_resolution_time_hours': avg_resolution or 0,
+        'technician_performance': [serialize_row(item) for item in technician_performance],
+        'status_snapshot': snapshot
+    }
 
 
 @app.route('/api/warden/complaints/pending', methods=['GET'])
@@ -3318,7 +5148,7 @@ def get_assigned_complaints_warden():
             LEFT JOIN rooms r ON s.room_id = r.id
             LEFT JOIN blocks b ON r.block_id = b.id
             LEFT JOIN users tech ON c.assigned_technician_id = tech.id
-            WHERE c.status IN ('assigned', 'in_progress')
+            WHERE c.status IN ('assigned', 'in_progress', 'delayed')
             ORDER BY c.priority DESC, c.created_at ASC
         """
         cursor.execute(query)
@@ -3412,7 +5242,7 @@ def assign_complaint_warden(complaint_id):
         # Update complaint
         cursor.execute("""
             UPDATE complaints 
-            SET status = 'assigned', assigned_technician_id = %s, assigned_at = NOW()
+            SET status = 'assigned', assigned_technician_id = %s, assigned_at = NOW(), last_technician_update_at = NULL
             WHERE id = %s
         """, (technician_id, complaint_id))
         
@@ -5877,7 +7707,7 @@ def get_pending_complaints():
             FROM complaints c
             JOIN students s ON c.student_id = s.id
             JOIN users u ON s.user_id = u.id
-            WHERE c.status IN ('pending', 'assigned', 'in_progress')
+            WHERE c.status IN ('pending', 'assigned', 'in_progress', 'delayed')
             ORDER BY c.priority DESC, c.created_at ASC
         """
         cursor.execute(query)
@@ -5937,7 +7767,7 @@ def resolve_complaint(complaint_id):
         
         query = """
             UPDATE complaints 
-            SET status = 'resolved', resolved_at = NOW(), resolution_notes = %s
+            SET status = 'resolved', resolved_at = NOW(), resolution_notes = %s, last_technician_update_at = NOW()
             WHERE id = %s
         """
         cursor.execute(query, (resolution_notes, complaint_id))
@@ -5991,6 +7821,7 @@ def get_technician_complaints(user_id):
         grouped = {
             'assigned': [],
             'in_progress': [],
+            'delayed': [],
             'resolved': [],
             'closed': []
         }
@@ -6039,14 +7870,14 @@ def update_complaint_status(complaint_id):
         if new_status == 'resolved' or new_status == 'closed':
             query = """
                 UPDATE complaints 
-                SET status = %s, resolution_notes = %s, resolved_at = NOW()
+                SET status = %s, resolution_notes = %s, resolved_at = NOW(), last_technician_update_at = NOW()
                 WHERE id = %s
             """
             cursor.execute(query, (new_status, resolution_notes, complaint_id))
         else:
             query = """
                 UPDATE complaints 
-                SET status = %s
+                SET status = %s, last_technician_update_at = NOW()
                 WHERE id = %s
             """
             cursor.execute(query, (new_status, complaint_id))
@@ -6399,9 +8230,28 @@ def mark_outpass_exit(outpass_id):
         outpass = cursor.fetchone()
         
         if not outpass:
+            cursor.close()
+            connection.close()
             return jsonify({'success': False, 'message': 'Outpass not found'}), 404
         
-        if outpass['status'] != 'approved':
+        if outpass['status'] not in ['approved', 'approved_otp']:
+            # Track unauthorized exit attempts for Security Monitoring Agent.
+            create_security_log(
+                activity_type='incident',
+                description=(
+                    f"Unauthorized exit attempt: {outpass['student_name']} ({outpass['roll_number']}) "
+                    f"tried to exit with outpass OP-{outpass_id} in status '{outpass['status']}'."
+                ),
+                related_student_id=outpass['student_id'],
+                related_outpass_id=outpass_id,
+                severity='high',
+                location='Gate',
+                logged_by=security_user_id,
+                action_taken='Exit blocked by security. Pending/invalid approval status.',
+                follow_up_required='yes'
+            )
+            cursor.close()
+            connection.close()
             return jsonify({'success': False, 'message': 'Outpass must be approved to mark exit'}), 400
         
         # Update outpass status to 'exited'
@@ -6466,9 +8316,13 @@ def mark_outpass_return(outpass_id):
         outpass = cursor.fetchone()
         
         if not outpass:
+            cursor.close()
+            connection.close()
             return jsonify({'success': False, 'message': 'Outpass not found'}), 404
         
-        if outpass['status'] not in ['exited', 'overdue', 'approved']:
+        if outpass['status'] not in ['exited', 'overdue', 'approved', 'approved_otp']:
+            cursor.close()
+            connection.close()
             return jsonify({'success': False, 'message': 'Invalid outpass status for return'}), 400
         
         # Calculate if late
@@ -6489,7 +8343,9 @@ def mark_outpass_return(outpass_id):
                 final_status = 'returned'
             else:
                 is_overdue = True
-                final_status = 'overdue'
+                # Student has returned physically, so keep status as returned
+                # and track severe delay via is_overdue/monitor_state.
+                final_status = 'returned'
 
         monitor_state = 'overdue' if is_overdue else ('grace_period' if grace_period_applied else 'on_time')
 
@@ -6520,30 +8376,52 @@ def mark_outpass_return(outpass_id):
         
         # Create security log
         log_severity = 'critical' if is_overdue else ('medium' if grace_period_applied else 'low')
+        late_duration_str = format_late_duration(late_minutes)
         create_security_log(
             activity_type='outpass',
             description=f"Student {outpass['student_name']} ({outpass['roll_number']}) marked as returned from outpass OP-{outpass_id}" + 
-                       (f" ({late_minutes} mins late)" if late_minutes > 0 else ""),
+                       (f" ({late_duration_str} late)" if late_minutes > 0 else ""),
             related_student_id=outpass['student_id'],
             related_outpass_id=outpass_id,
             severity=log_severity,
             location='Gate',
             logged_by=security_user_id,
-            action_taken=f"Student return recorded. Status: {final_status}. Late: {late_minutes} mins. Notes: {notes}" if notes 
-                        else f"Student return recorded. Status: {final_status}. Late: {late_minutes} mins",
+            action_taken=f"Student return recorded. Status: {final_status}. Late: {late_duration_str}. Notes: {notes}" if notes 
+                        else f"Student return recorded. Status: {final_status}. Late: {late_duration_str}",
             follow_up_required='yes' if is_overdue else 'no'
         )
         
-        # If overdue, create alert for warden
-        if is_overdue:
-            alert_msg = f"Student returned {late_minutes} minutes late (ID: {outpass_id})"
-            alert_title = f"Overdue Outpass - {outpass['student_name']}"
+        # Notify warden for any late return.
+        if late_minutes > 0:
+            alert_msg = f"Student returned {late_duration_str} late (ID: {outpass_id})"
+            alert_title = f"Late Return - {outpass['student_name']}"
             cursor.execute("""
                 INSERT INTO notifications (user_id, title, message, notification_type, related_module, related_id)
                 SELECT u.id, %s, %s, 'warning', 'outpass', %s
                 FROM users u
                 WHERE u.role = 'warden'
             """, (alert_title, alert_msg, outpass_id))
+            connection.commit()
+
+        if late_minutes > 0:
+            create_security_agentic_alert(
+                cursor,
+                alert_type='late_return',
+                severity='high' if is_overdue else 'medium',
+                title='Late Return Detected',
+                message=(
+                    f"{outpass['student_name']} ({outpass['roll_number']}) returned {late_duration_str} after approved time "
+                    f"for outpass OP-{outpass_id}."
+                ),
+                student_id=outpass['student_id'],
+                related_outpass_id=outpass_id,
+                detection_key=f"late_return_{outpass_id}",
+                metadata={
+                    'late_minutes': late_minutes,
+                    'grace_period_applied': grace_period_applied,
+                    'final_status': final_status
+                }
+            )
             connection.commit()
         
         cursor.close()
@@ -7351,8 +9229,14 @@ if __name__ == '__main__':
     try:
         ensure_outpass_monitoring_columns()
         ensure_holiday_mode_columns()
+        ensure_complaint_monitoring_columns()
+        ensure_leave_monitoring_columns()
+        ensure_security_monitoring_columns()
         if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
             start_outpass_monitor_agent()
+            start_complaint_monitor_agent()
+            start_leave_monitor_agent()
+            start_security_monitor_agent()
 
         connection = get_db_connection()
         if connection:

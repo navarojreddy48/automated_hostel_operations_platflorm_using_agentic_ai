@@ -11,6 +11,8 @@ const SecurityOutpass = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [notes, setNotes] = useState('');
   const [actionLoading, setActionLoading] = useState({});
+  const [actionConfirm, setActionConfirm] = useState({ open: false, type: null, id: null });
+  const [actionResult, setActionResult] = useState({ open: false, title: '', message: '', success: true });
   const currentUser = getCurrentUser();
 
   const [outpasses, setOutpasses] = useState([]);
@@ -18,6 +20,21 @@ const SecurityOutpass = () => {
   useEffect(() => {
     fetchOutpasses();
   }, []);
+
+  const formatLateDuration = (lateMinutes) => {
+    const totalMinutes = Number(lateMinutes || 0);
+    if (!totalMinutes) return '0:00 hours';
+
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const remaining = totalMinutes % (24 * 60);
+    const hours = Math.floor(remaining / 60);
+    const minutes = remaining % 60;
+
+    if (days > 0) {
+      return `${days} ${days === 1 ? 'day' : 'days'} ${hours}:${String(minutes).padStart(2, '0')} hours`;
+    }
+    return `${hours}:${String(minutes).padStart(2, '0')} hours`;
+  };
 
   const fetchOutpasses = async () => {
     setLoading(true);
@@ -37,30 +54,45 @@ const SecurityOutpass = () => {
 
   const handleMarkOut = async (id) => {
     if (actionLoading[id]) return;
-    if (!confirm('Mark this student as EXITED?')) return;
     setActionLoading((prev) => ({ ...prev, [id]: true }));
+    const securityUserId = currentUser?.userId || currentUser?.id || null;
     
     try {
       const response = await fetch(`http://localhost:5000/api/security/outpass/${id}/mark-exit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          security_user_id: currentUser.userId,
+          security_user_id: securityUserId,
           notes: notes || 'Student exited'
         })
       });
       const data = await response.json();
       
       if (data.success) {
-        alert('Student marked as OUT');
+        setActionResult({
+          open: true,
+          success: true,
+          title: 'Exit Recorded',
+          message: 'Student marked as OUT.'
+        });
         setNotes('');
         fetchOutpasses();
       } else {
-        alert('Failed: ' + data.message);
+        setActionResult({
+          open: true,
+          success: false,
+          title: 'Action Failed',
+          message: data.message || 'Unable to mark student as OUT.'
+        });
       }
     } catch (error) {
       console.error('Error marking exit:', error);
-      alert('Failed to mark exit');
+      setActionResult({
+        open: true,
+        success: false,
+        title: 'Action Failed',
+        message: 'Failed to mark exit.'
+      });
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
     }
@@ -68,15 +100,15 @@ const SecurityOutpass = () => {
 
   const handleMarkIn = async (id) => {
     if (actionLoading[id]) return;
-    if (!confirm('Mark this student as RETURNED?')) return;
     setActionLoading((prev) => ({ ...prev, [id]: true }));
+    const securityUserId = currentUser?.userId || currentUser?.id || null;
     
     try {
       const response = await fetch(`http://localhost:5000/api/security/outpass/${id}/mark-return`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          security_user_id: currentUser.userId,
+          security_user_id: securityUserId,
           notes: notes || 'Student returned'
         })
       });
@@ -85,24 +117,54 @@ const SecurityOutpass = () => {
       if (data.success) {
         let message = 'Student marked as RETURNED';
         if (data.is_late) {
-          message += `\n⚠️ Student was ${data.late_minutes} minutes late`;
+          message += `\nStudent was ${formatLateDuration(data.late_minutes)} late.`;
           if (data.grace_period_applied) {
-            message += '\n✅ Grace period applied (within 2 hours)';
+            message += '\nGrace period applied.';
           } else {
-            message += '\n❌ OVERDUE - Generated alert for warden';
+            message += '\nHigh-priority alert generated for warden.';
           }
         }
-        alert(message);
+        setActionResult({
+          open: true,
+          success: true,
+          title: 'Return Recorded',
+          message
+        });
         setNotes('');
         fetchOutpasses();
       } else {
-        alert('Failed: ' + data.message);
+        setActionResult({
+          open: true,
+          success: false,
+          title: 'Action Failed',
+          message: data.message || 'Unable to mark student as RETURNED.'
+        });
       }
     } catch (error) {
       console.error('Error marking return:', error);
-      alert('Failed to mark return');
+      setActionResult({
+        open: true,
+        success: false,
+        title: 'Action Failed',
+        message: 'Failed to mark return.'
+      });
     } finally {
       setActionLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const requestConfirm = (type, id) => {
+    setActionConfirm({ open: true, type, id });
+  };
+
+  const confirmAction = async () => {
+    if (!actionConfirm.open || !actionConfirm.id) return;
+    const { type, id } = actionConfirm;
+    setActionConfirm({ open: false, type: null, id: null });
+    if (type === 'out') {
+      await handleMarkOut(id);
+    } else {
+      await handleMarkIn(id);
     }
   };
 
@@ -116,24 +178,30 @@ const SecurityOutpass = () => {
     setSelectedOutpass(null);
   };
 
-  const getStatusClass = (status) => {
+  const getStatusClass = (item) => {
+    const status = item?.status;
     switch(status?.toLowerCase()) {
       case 'approved': return 'approved';
       case 'exited': return 'out';
-      case 'returned': return 'returned';
+      case 'returned':
+        return item?.is_late || Number(item?.late_minutes || 0) > 0 ? 'returned-late' : 'returned';
       case 'overdue': return 'rejected';
       case 'pending': return 'pending';
       default: return 'pending';
     }
   };
 
-  const getStatusDisplay = (status) => {
-    switch(status?.toLowerCase()) {
+  const getStatusDisplay = (item) => {
+    const status = item?.status?.toLowerCase();
+    switch(status) {
       case 'approved': return '✅ Approved';
       case 'exited': return '🚪 Out';
-      case 'returned': return '✔️ Returned';
+      case 'returned':
+        return item?.is_late || Number(item?.late_minutes || 0) > 0
+          ? 'Returned Late'
+          : '✔️ Returned';
       case 'overdue': return '⚠️ Overdue';
-      default: return status;
+      default: return item?.status;
     }
   };
 
@@ -273,7 +341,6 @@ const SecurityOutpass = () => {
                     >
                       <td className="student-cell">
                         <div className="student-name">{item.student_name}</div>
-                        <div className="student-id">ID: {item.student_id}</div>
                       </td>
                       <td>{item.roll_number}</td>
                       <td>{item.room_number ? `${item.room_number} ${item.block_name}` : '—'}</td>
@@ -281,17 +348,17 @@ const SecurityOutpass = () => {
                       <td>{item.reason}</td>
                       <td>{formatDateTime(item.expected_return_time)}</td>
                       <td>
-                        <span className={`status-badge ${getStatusClass(item.status)}`}>
-                          {getStatusDisplay(item.status)}
+                        <span className={`status-badge ${getStatusClass(item)}`}>
+                          {getStatusDisplay(item)}
                         </span>
                         {item.status === 'overdue' && (
                           <div className="overdue-note">
-                            Late by {item.late_minutes || 0} minutes
+                            Late by {formatLateDuration(item.late_minutes || 0)}
                           </div>
                         )}
                         {item.status === 'returned' && item.is_late && item.grace_period_applied && (
                           <div className="grace-period-note">
-                            ✅ Grace period applied ({item.late_minutes} min late)
+                            ✅ Grace period applied ({formatLateDuration(item.late_minutes)} late)
                           </div>
                         )}
                       </td>
@@ -303,20 +370,20 @@ const SecurityOutpass = () => {
                           >
                             View Details
                           </button>
-                          {item.status === 'approved' && (
+                          {(item.status === 'approved' || item.status === 'approved_otp') && (
                             <button
                               className="btn-action primary"
-                              onClick={() => handleMarkOut(item.id)}
+                              onClick={() => requestConfirm('out', item.id)}
                               disabled={actionLoading[item.id]}
                             >
                               {actionLoading[item.id] && <span className="btn-spinner" />}
                               {actionLoading[item.id] ? 'Marking...' : 'Mark OUT'}
                             </button>
                           )}
-                          {item.status === 'exited' && (
+                          {(item.status === 'exited' || item.status === 'overdue') && (
                             <button
                               className="btn-action primary"
-                              onClick={() => handleMarkIn(item.id)}
+                              onClick={() => requestConfirm('in', item.id)}
                               disabled={actionLoading[item.id]}
                             >
                               {actionLoading[item.id] && <span className="btn-spinner" />}
@@ -370,16 +437,16 @@ const SecurityOutpass = () => {
                 <div>
                   <div className="detail-label">Status</div>
                   <div className="detail-value">
-                    <span className={`status-badge ${getStatusClass(selectedOutpass.status)}`}>
-                      {getStatusDisplay(selectedOutpass.status)}
+                    <span className={`status-badge ${getStatusClass(selectedOutpass)}`}>
+                      {getStatusDisplay(selectedOutpass)}
                     </span>
                   </div>
                   <div className="detail-sub">
                     {selectedOutpass.is_late && (
                       <>
                         {selectedOutpass.grace_period_applied 
-                          ? `✅ Grace period (${selectedOutpass.late_minutes} min)`
-                          : `⚠️ Overdue (${selectedOutpass.late_minutes} min)`
+                          ? `✅ Grace period (${formatLateDuration(selectedOutpass.late_minutes)})`
+                          : `⚠️ Overdue (${formatLateDuration(selectedOutpass.late_minutes)})`
                         }
                       </>
                     )}
@@ -430,6 +497,45 @@ const SecurityOutpass = () => {
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={closeDetails}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionConfirm.open && (
+        <div className="modal-overlay" onClick={() => setActionConfirm({ open: false, type: null, id: null })}>
+          <div className="modal-content" style={{ maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Confirm Action</h2>
+              <button className="modal-close" onClick={() => setActionConfirm({ open: false, type: null, id: null })}>×</button>
+            </div>
+            <div className="modal-body">
+              <p>
+                {actionConfirm.type === 'out'
+                  ? 'Mark this student as EXITED?'
+                  : 'Mark this student as RETURNED?'}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setActionConfirm({ open: false, type: null, id: null })}>Cancel</button>
+              <button className="btn-action primary" onClick={confirmAction}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {actionResult.open && (
+        <div className="modal-overlay" onClick={() => setActionResult({ open: false, title: '', message: '', success: true })}>
+          <div className="modal-content" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{actionResult.title}</h2>
+              <button className="modal-close" onClick={() => setActionResult({ open: false, title: '', message: '', success: true })}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ whiteSpace: 'pre-line', color: actionResult.success ? '#065f46' : '#991b1b' }}>{actionResult.message}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-action primary" onClick={() => setActionResult({ open: false, title: '', message: '', success: true })}>OK</button>
             </div>
           </div>
         </div>

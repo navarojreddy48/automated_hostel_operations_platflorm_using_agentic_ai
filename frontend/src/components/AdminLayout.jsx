@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import TopNavbar from './TopNavbar';
 import '../styles/admin-dashboard.css';
 
 const AdminLayout = () => {
@@ -8,7 +9,8 @@ const AdminLayout = () => {
     <div className="admin-page">
       <div className="admin-layout">
         <Sidebar role="admin" />
-        <main className="admin-main" style={{ marginLeft: '280px' }}>
+        <TopNavbar role="admin" />
+        <main className="admin-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
           <Outlet />
         </main>
       </div>

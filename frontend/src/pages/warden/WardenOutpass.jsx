@@ -2,6 +2,21 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/warden-dashboard.css';
 
+const formatLateDuration = (lateMinutes) => {
+  const totalMinutes = Number(lateMinutes || 0);
+  if (!totalMinutes) return '0:00 hours';
+
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const remaining = totalMinutes % (24 * 60);
+  const hours = Math.floor(remaining / 60);
+  const minutes = remaining % 60;
+
+  if (days > 0) {
+    return `${days} ${days === 1 ? 'day' : 'days'} ${hours}:${String(minutes).padStart(2, '0')} hours`;
+  }
+  return `${hours}:${String(minutes).padStart(2, '0')} hours`;
+};
+
 const WardenOutpass = () => {
   const [requests, setRequests] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -318,7 +333,7 @@ const WardenOutpass = () => {
                       {req.alert_to_student && req.alert_to_parent && ' · '}
                       {req.alert_to_parent && '✅ Parent email sent'}
                       {req.alert_sent_at && ` · Alert time: ${new Date(req.alert_sent_at).toLocaleString()}`}
-                      {req.late_minutes && ` · Delay: ${req.late_minutes} minutes`}
+                      {req.late_minutes && ` · Delay: ${formatLateDuration(req.late_minutes)}`}
                     </div>
                   </div>
                 )}

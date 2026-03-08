@@ -11,9 +11,10 @@ const ProfileModal = ({ onClose }) => {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const API_BASE_URL = 'http://localhost:5000';
   
   const user = getCurrentUser();
-  const userId = user?.userId;
+  const userId = user?.userId || user?.id;
   const userRole = user?.role;
 
   useEffect(() => {
@@ -21,6 +22,12 @@ const ProfileModal = ({ onClose }) => {
   }, []);
 
   const fetchProfileData = async () => {
+    if (!userId || !userRole) {
+      setLoading(false);
+      setError('User session is invalid. Please login again.');
+      return;
+    }
+
     setLoading(true);
     setError('');
     
@@ -30,19 +37,19 @@ const ProfileModal = ({ onClose }) => {
       // Determine API endpoint based on role
       switch(userRole) {
         case 'student':
-          endpoint = `/api/student/profile/${userId}`;
+          endpoint = `${API_BASE_URL}/api/student/profile/${userId}`;
           break;
         case 'warden':
-          endpoint = `/api/warden/profile/${userId}`;
+          endpoint = `${API_BASE_URL}/api/warden/profile/${userId}`;
           break;
         case 'security':
-          endpoint = `/api/security/profile/${userId}`;
+          endpoint = `${API_BASE_URL}/api/security/profile/${userId}`;
           break;
         case 'technician':
-          endpoint = `/api/technician/profile/${userId}`;
+          endpoint = `${API_BASE_URL}/api/technician/profile/${userId}`;
           break;
         case 'admin':
-          endpoint = `/api/admin/profile/${userId}`;
+          endpoint = `${API_BASE_URL}/api/admin/profile/${userId}`;
           break;
         default:
           throw new Error('Invalid user role');
@@ -51,7 +58,7 @@ const ProfileModal = ({ onClose }) => {
       const response = await fetch(endpoint);
       const data = await response.json();
 
-      if (data.success) {
+      if (response.ok && data.success) {
         setProfileData(data.data);
       } else {
         setError(data.message || 'Failed to load profile');

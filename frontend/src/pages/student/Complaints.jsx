@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import StudentLayout from '../../components/StudentLayout';
 import RaiseComplaintModal from '../../components/complaints/RaiseComplaintModal';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-complaints.css';
@@ -125,7 +124,7 @@ const Complaints = () => {
     ? complaints.filter((c) => c.status === 'pending' || c.status === 'assigned' || c.status === 'in_progress')
     : complaints.filter((c) => c.status === 'resolved');
   return (
-    <StudentLayout>
+    <>
       <div className="leave-page">
         <div className="leave-header">
           <h1>Maintenance Complaints</h1>
@@ -245,7 +244,7 @@ const Complaints = () => {
           blockInfo={blockInfo}
         />
       )}
-    </StudentLayout>
+    </>
   );
 };
 

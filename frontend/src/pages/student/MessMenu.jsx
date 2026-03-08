@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import StudentLayout from '../../components/StudentLayout';
 import '../../styles/student-mess.css';
 
 const MessMenu = () => {
@@ -98,7 +97,7 @@ const MessMenu = () => {
   const todayMeals = messMenu[currentDay];
 
   return (
-    <StudentLayout>
+    <>
           <main className="student-main">
           <header className="mess-header">
             <div>
@@ -181,7 +180,7 @@ const MessMenu = () => {
             </div>
           )}
           </main>
-    </StudentLayout>
+    </>
   );
 };
 

@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Navbar from '../../components/Navbar';
 import { useNavigate } from 'react-router-dom';
-import StudentLayout from '../../components/StudentLayout';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-dashboard.css';
 
@@ -184,8 +182,7 @@ const StudentDashboard = () => {
   };
 
   return (
-    <StudentLayout>
-      <main className="student-main">
+    <main className="student-main">
       <div className="dashboard-header">
         <div className="header-row">
           <div>
@@ -335,7 +332,6 @@ const StudentDashboard = () => {
             )}
           </section>
       </main>
-    </StudentLayout>
   );
 };
 

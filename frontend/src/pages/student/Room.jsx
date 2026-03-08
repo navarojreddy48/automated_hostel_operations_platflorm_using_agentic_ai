@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import StudentLayout from '../../components/StudentLayout';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-room.css';
 
@@ -154,7 +153,7 @@ const Room = () => {
   };
 
   return (
-    <StudentLayout>
+    <>
       <header className="room-header">
         <div>
           <h1 className="room-title">Room Details</h1>
@@ -391,7 +390,7 @@ const Room = () => {
           </div>
         </div>
       )}
-    </StudentLayout>
+    </>
   );
 };
 

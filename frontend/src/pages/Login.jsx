@@ -116,29 +116,13 @@ const Login = () => {
           <form className="login-form" onSubmit={handleLoginClick}>
             {/* User Type Toggle */}
             <div className="form-group">
-              <div style={{
-                display: 'flex',
-                gap: '10px',
-                backgroundColor: '#f3f4f6',
-                padding: '4px',
-                borderRadius: '8px',
-                marginBottom: '10px'
-              }}>
+              <div className="user-type-toggle" role="tablist" aria-label="Select login type">
                 <button
                   type="button"
                   onClick={() => setUserType('student')}
                   disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontWeight: '500',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    backgroundColor: userType === 'student' ? '#4f46e5' : 'transparent',
-                    color: userType === 'student' ? 'white' : '#6b7280',
-                    transition: 'all 0.2s'
-                  }}
+                  className={`user-type-btn ${userType === 'student' ? 'active' : ''}`}
+                  aria-selected={userType === 'student'}
                 >
                   👨‍🎓 Student
                 </button>
@@ -146,17 +130,8 @@ const Login = () => {
                   type="button"
                   onClick={() => setUserType('staff')}
                   disabled={loading}
-                  style={{
-                    flex: 1,
-                    padding: '10px',
-                    border: 'none',
-                    borderRadius: '6px',
-                    fontWeight: '500',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    backgroundColor: userType === 'staff' ? '#4f46e5' : 'transparent',
-                    color: userType === 'staff' ? 'white' : '#6b7280',
-                    transition: 'all 0.2s'
-                  }}
+                  className={`user-type-btn ${userType === 'staff' ? 'active' : ''}`}
+                  aria-selected={userType === 'staff'}
                 >
                   👔 Staff
                 </button>

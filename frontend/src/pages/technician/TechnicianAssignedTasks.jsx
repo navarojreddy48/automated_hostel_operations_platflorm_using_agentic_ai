@@ -3,6 +3,7 @@ import { getCurrentUser } from '../../utils/auth';
 import '../../styles/warden-dashboard.css';
 
 const TechnicianAssignedTasks = () => {
+  const API_BASE_URL = 'http://localhost:5000';
   const [tasks, setTasks] = useState([]);
   const [selectedStatus, setSelectedStatus] = useState('assigned');
   const [loading, setLoading] = useState(true);
@@ -39,7 +40,7 @@ const TechnicianAssignedTasks = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-      const apiUrl = `/api/technician/${currentUser.userId}/complaints`;
+      const apiUrl = `${API_BASE_URL}/api/technician/${currentUser.userId}/complaints`;
       console.log(`📡 API URL: ${apiUrl}`);
 
       const res = await fetch(apiUrl, { signal: controller.signal });

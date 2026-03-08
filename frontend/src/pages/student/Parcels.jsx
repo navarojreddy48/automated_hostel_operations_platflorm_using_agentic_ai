@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import StudentLayout from '../../components/StudentLayout';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-parcels.css';
 
@@ -64,7 +63,7 @@ const Parcels = () => {
   const collectedParcels = parcels.filter((p) => p.status === 'collected');
 
   return (
-    <StudentLayout>
+    <>
           <main className="student-main">
           <header className="parcels-header">
             <div>
@@ -159,7 +158,7 @@ const Parcels = () => {
             </section>
           </div>
           </main>
-    </StudentLayout>
+    </>
   );
 };
 

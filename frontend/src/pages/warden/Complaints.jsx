@@ -59,6 +59,7 @@ const WardenComplaints = () => {
       pending: complaints.filter(c => c.status === 'pending').length,
       assigned: complaints.filter(c => c.status === 'assigned').length,
       in_progress: complaints.filter(c => c.status === 'in_progress').length,
+      delayed: complaints.filter(c => c.status === 'delayed').length,
       resolved: complaints.filter(c => c.status === 'resolved').length,
       closed: complaints.filter(c => c.status === 'closed').length,
     };
@@ -93,6 +94,7 @@ const WardenComplaints = () => {
       'pending': '#fbbf24',
       'assigned': '#3b82f6',
       'in_progress': '#8b5cf6',
+      'delayed': '#dc2626',
       'resolved': '#34d399',
       'closed': '#6b7280',
     };
@@ -213,6 +215,12 @@ const WardenComplaints = () => {
                 In Progress ({statusCounts.in_progress})
               </button>
               <button
+                className={`filter-btn ${statusFilter === 'delayed' ? 'active' : ''}`}
+                onClick={() => setStatusFilter('delayed')}
+              >
+                Delayed ({statusCounts.delayed})
+              </button>
+              <button
                 className={`filter-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
                 onClick={() => setStatusFilter('resolved')}
               >
@@ -316,6 +324,14 @@ const WardenComplaints = () => {
                           onClick={() => handleAssignClick(complaint)}
                         >
                           ✓ Assign
+                        </button>
+                      )}
+                      {(complaint.status === 'delayed' && !complaint.technician_name) && (
+                        <button
+                          className="btn-assign"
+                          onClick={() => handleAssignClick(complaint)}
+                        >
+                          ! Urgent Assign
                         </button>
                       )}
                     </div>

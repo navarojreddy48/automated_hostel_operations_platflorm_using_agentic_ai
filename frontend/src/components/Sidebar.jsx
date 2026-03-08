@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { logout, getCurrentUser } from '../utils/auth';
-import ChangePassword from './ChangePassword';
-import ProfileModal from './ProfileModal';
+import React, { useEffect, useState } from 'react';
+import { NavLink } from 'react-router-dom';
+import { getCurrentUser } from '../utils/auth';
 import '../styles/unified-sidebar.css';
 
 /**
@@ -24,16 +22,15 @@ import '../styles/unified-sidebar.css';
  * <Sidebar /> // Auto-detects role from localStorage
  */
 const Sidebar = ({ role: propRole }) => {
-  const navigate = useNavigate();
   const user = getCurrentUser();
   const role = propRole || user?.role;
-  const [showChangePassword, setShowChangePassword] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === 'true');
 
-  const handleSignOut = async () => {
-    await logout();
-    navigate('/login', { replace: true });
-  };
+  useEffect(() => {
+    const width = isCollapsed ? '88px' : '280px';
+    document.documentElement.style.setProperty('--sidebar-width', width);
+    localStorage.setItem('sidebarCollapsed', isCollapsed ? 'true' : 'false');
+  }, [isCollapsed]);
 
   // Menu configuration for each role
   const menuConfig = {
@@ -147,12 +144,31 @@ const Sidebar = ({ role: propRole }) => {
   }
 
   return (
-    <aside className="unified-sidebar">
+    <aside className={`unified-sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       {/* Header Section */}
       <div className="sidebar-header">
-        <div className="sidebar-logo">{config.logo}</div>
-        <div className="sidebar-title">{config.title}</div>
+        <div className="sidebar-header-top">
+          <div className="sidebar-logo">{config.logo}</div>
+          <div className="sidebar-brand-block">
+            <div className="sidebar-title-row">
+              <div className="sidebar-title">{config.title}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="sidebar-toggle-btn"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? '›' : '‹'}
+          </button>
+        </div>
       </div>
+
+      {!isCollapsed && (
+        <div className="sidebar-section-label">Menu</div>
+      )}
 
       {/* Navigation Menu */}
       <nav className="sidebar-menu">
@@ -165,53 +181,14 @@ const Sidebar = ({ role: propRole }) => {
                   isActive ? 'sidebar-item active' : 'sidebar-item'
                 }
               >
-                {item.icon} <span>{item.label}</span>
+                <span className="sidebar-item-icon" aria-hidden="true">{item.icon}</span>
+                <span className="sidebar-item-label">{item.label}</span>
               </NavLink>
             </li>
           ))}
         </ul>
       </nav>
 
-      {/* Footer Section */}
-      <div className="sidebar-footer">
-        <div className="sidebar-profile-card">
-          <div className="sidebar-avatar-circle">
-            {config.profile.initial}
-          </div>
-          <div className="sidebar-profile-info">
-            <div className="sidebar-profile-name">{config.profile.name}</div>
-            <div className="sidebar-profile-subtitle">{config.profile.subtitle}</div>
-          </div>
-        </div>
-        <button 
-          className="sidebar-view-profile-btn" 
-          onClick={() => setShowProfile(true)}
-        >
-          👤 View Profile
-        </button>
-        <button 
-          className="sidebar-change-password-btn" 
-          onClick={() => setShowChangePassword(true)}
-        >
-          🔒 Change Password
-        </button>
-        <button className="sidebar-logout-btn" onClick={handleSignOut}>
-          Sign Out
-        </button>
-      </div>
-
-      {/* Profile Modal */}
-      {showProfile && (
-        <ProfileModal onClose={() => setShowProfile(false)} />
-      )}
-
-      {/* Change Password Modal */}
-      {showChangePassword && (
-        <ChangePassword 
-          userId={user?.userId} 
-          onClose={() => setShowChangePassword(false)} 
-        />
-      )}
     </aside>
   );
 };
