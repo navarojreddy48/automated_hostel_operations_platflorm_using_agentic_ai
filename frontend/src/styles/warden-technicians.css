@@ -249,6 +249,16 @@
   white-space: nowrap;
 }
 
+/* Keep technician row actions in one horizontal line even if other page CSS defines .actions-cell differently */
+.technicians-table td.actions-cell {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 170px;
+}
+
 .btn-edit,
 .btn-toggle {
   padding: 0.5rem 1rem;

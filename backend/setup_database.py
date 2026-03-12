@@ -1,6 +1,6 @@
 """
 Complete Database Setup
-Runs main schema
+Runs consolidated main schema
 """
 
 import mysql.connector
@@ -91,11 +91,7 @@ def main():
                                  'STEP 1: Main Database Schema'):
             return False
 
-        # Step 2: Execute outpass monitoring migration
-        if not execute_sql_file(cursor, conn,
-                                 'migrations/2026_02_17_add_outpass_agentic_monitoring.sql',
-                                 'STEP 2: Outpass Agentic Monitoring Columns'):
-            return False
+        # All migration end-state is consolidated into database_schema.sql.
         
         # Verify setup
         print(f"\n{'='*60}")

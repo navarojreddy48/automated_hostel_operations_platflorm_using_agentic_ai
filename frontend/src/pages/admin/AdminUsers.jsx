@@ -431,7 +431,7 @@ const AdminUsers = () => {
                   <>
                     <td>{user.email}</td>
                     <td>{user.phone || 'N/A'}</td>
-                    <td>{user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</td>
+                    <td>{user.created_at ? new Date(user.created_at).toLocaleDateString('en-GB') : 'N/A'}</td>
                   </>
                 )}
                 {activeTab === 'Technicians' && (
@@ -525,7 +525,7 @@ const AdminUsers = () => {
         </div>
         {activeTab !== 'Students' && (
           <button className="btn-primary btn-add" onClick={handleAddUser}>
-            âž• Add User
+            Add User
           </button>
         )}
       </div>
@@ -937,4 +937,7 @@ const AdminUsers = () => {
 };
 
 export default AdminUsers;
+
+
+
 

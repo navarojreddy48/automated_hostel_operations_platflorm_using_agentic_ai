@@ -146,7 +146,7 @@ const StudentLeave = () => {
     return new Date(fallback.getFullYear(), fallback.getMonth(), fallback.getDate());
   };
 
-  // Build map of leave day -> status for the current month
+  // Build map of leave day status for the current month
   const getLeaveDayStatusMap = () => {
     const statusMap = {};
     const currentYear = currentMonth.getFullYear();
@@ -168,14 +168,21 @@ const StudentLeave = () => {
         if (cursor.getFullYear() === currentYear && cursor.getMonth() === currentMonthIndex) {
           const dayNumber = cursor.getDate();
 
-          if (leave.status === 'approved') {
+          if (leave.status === 'completed') {
+            statusMap[dayNumber] = 'completed';
+          } else if (leave.status === 'approved' && statusMap[dayNumber] !== 'completed') {
             statusMap[dayNumber] = 'approved';
-          } else if (leave.status === 'pending' && statusMap[dayNumber] !== 'approved') {
+          } else if (
+            leave.status === 'pending' &&
+            statusMap[dayNumber] !== 'approved' &&
+            statusMap[dayNumber] !== 'completed'
+          ) {
             statusMap[dayNumber] = 'pending';
           } else if (
             leave.status === 'rejected' &&
             statusMap[dayNumber] !== 'approved' &&
-            statusMap[dayNumber] !== 'pending'
+            statusMap[dayNumber] !== 'pending' &&
+            statusMap[dayNumber] !== 'completed'
           ) {
             statusMap[dayNumber] = 'rejected';
           }
@@ -251,6 +258,8 @@ const StudentLeave = () => {
                   <div
                     key={index}
                     className={`calendar-day ${day ? 'active' : 'empty'} ${
+                      dayStatus === 'completed' ? 'completed' : ''
+                    } ${
                       dayStatus === 'approved' ? 'approved' : ''
                     } ${
                       dayStatus === 'pending' ? 'pending' : ''
@@ -283,6 +292,10 @@ const StudentLeave = () => {
                   <div className="legend-color approved-legend"></div>
                   <span>Approved leave days</span>
                 </div>
+                <div className="legend-item">
+                  <div className="legend-color completed-legend"></div>
+                  <span>Completed leave days</span>
+                </div>
               </div>
             </div>
           </section>
@@ -311,7 +324,7 @@ const StudentLeave = () => {
                       <div>
                         <h4 style={{ margin: '0 0 0.25rem 0' }}>{leave.leave_type || 'Leave Request'}</h4>
                         <p style={{ margin: '0', fontSize: '14px', color: '#6b7280' }}>
-                          {leave.from_date && new Date(leave.from_date).toLocaleDateString()} - {leave.to_date && new Date(leave.to_date).toLocaleDateString()}
+                          {leave.from_date && new Date(leave.from_date).toLocaleDateString('en-GB')} - {leave.to_date && new Date(leave.to_date).toLocaleDateString('en-GB')}
                         </p>
                       </div>
                       <span style={{
@@ -459,4 +472,6 @@ const StudentLeave = () => {
 };
 
 export default StudentLeave;
+
+
 

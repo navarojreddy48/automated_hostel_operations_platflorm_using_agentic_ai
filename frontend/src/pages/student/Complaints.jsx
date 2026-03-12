@@ -79,7 +79,7 @@ const Complaints = () => {
           location: newComplaintData.location,
           block_id: newComplaintData.block_id || blockInfo.blockId,
           block_name: blockInfo.blockName,
-          status: 'pending',
+          status: data.status || 'pending',
           title: newComplaintData.title || newComplaintData.categoryLabel || newComplaintData.category,
           created_at: new Date().toISOString(),
         };
@@ -185,7 +185,7 @@ const Complaints = () => {
                   <div>
                     <div className="leave-name">{complaint.title || complaint.issue_type}</div>
                     <div className="leave-meta">
-                      {getDisplayCategory(complaint.issue_type || complaint.category)} · {complaint.location}
+                      {getDisplayCategory(complaint.issue_type || complaint.category)} - {complaint.location}
                       {complaint.student_name && <span style={{marginLeft: '8px', color: '#667eea', fontWeight: '600'}}>👤 {complaint.student_name}</span>}
                     </div>
                   </div>
@@ -215,7 +215,7 @@ const Complaints = () => {
                   <div>
                     <div className="leave-label">Date Raised</div>
                     <div className="leave-value">
-                      {complaint.created_at ? new Date(complaint.created_at).toLocaleDateString() : 'N/A'}
+                      {complaint.created_at ? new Date(complaint.created_at).toLocaleDateString('en-GB') : 'N/A'}
                     </div>
                   </div>
                 </div>
@@ -249,4 +249,6 @@ const Complaints = () => {
 };
 
 export default Complaints;
+
+
 

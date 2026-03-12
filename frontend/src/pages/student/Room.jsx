@@ -2,6 +2,58 @@ import React, { useEffect, useState } from 'react';
 import { getCurrentUser } from '../../utils/auth';
 import '../../styles/student-room.css';
 
+const DEFAULT_AMENITIES = ['WiFi', 'Study Table', 'Wardrobe', 'Ceiling Fan'];
+
+const getOrdinalFloorLabel = (floorNumber) => {
+  if (!Number.isFinite(floorNumber)) return '—';
+  if (floorNumber === 0) return 'Ground Floor';
+
+  const tens = floorNumber % 100;
+  const ones = floorNumber % 10;
+  let suffix = 'th';
+
+  if (tens < 11 || tens > 13) {
+    if (ones === 1) suffix = 'st';
+    if (ones === 2) suffix = 'nd';
+    if (ones === 3) suffix = 'rd';
+  }
+
+  return `${floorNumber}${suffix} Floor`;
+};
+
+const formatFloorValue = (floorValue, roomNumber) => {
+  if (floorValue !== null && floorValue !== undefined && floorValue !== '') {
+    if (typeof floorValue === 'string' && Number.isNaN(Number(floorValue))) {
+      return floorValue;
+    }
+
+    const parsed = Number(floorValue);
+    if (!Number.isNaN(parsed)) {
+      return getOrdinalFloorLabel(parsed);
+    }
+  }
+
+  const roomNumberText = String(roomNumber || '').trim();
+  const leading = roomNumberText.match(/^\d/);
+  if (leading) {
+    return getOrdinalFloorLabel(Number(leading[0]));
+  }
+
+  return '—';
+};
+
+const getStatusLabel = (status) => {
+  const text = String(status || '').replace(/_/g, ' ').trim();
+  if (!text) return '—';
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const getBlockLabel = (blockName) => {
+  const text = String(blockName || '').trim();
+  if (!text || text === '—') return '—';
+  return /^block\s/i.test(text) ? text : `Block ${text}`;
+};
+
 const Room = () => {
   const currentUser = getCurrentUser();
   const [showModal, setShowModal] = useState(false);
@@ -48,18 +100,19 @@ const Room = () => {
       const amenitiesList = room.amenities
         ? room.amenities.split(',').map((item) => item.trim()).filter(Boolean)
         : [];
+      const normalizedAmenities = amenitiesList.length > 0 ? amenitiesList : DEFAULT_AMENITIES;
 
       setRoomData({
         roomNumber: room.room_number || '—',
         block: room.block_name || '—',
-        floor: room.floor ?? '—',
+        floor: formatFloorValue(room.floor, room.room_number),
         roomType: room.room_type || '—',
         capacity: {
           current: room.occupied_count ?? 0,
           total: room.capacity ?? 0
         },
-        amenities: amenitiesList,
-        status: room.status || '—',
+        amenities: normalizedAmenities,
+        status: getStatusLabel(room.status),
         rent: room.rent_per_month ?? null
       });
       setRoommates(roommatesList);
@@ -102,6 +155,9 @@ const Room = () => {
   const roomTypeLabel = roomData.roomType && roomData.roomType !== '—'
     ? `${roomData.roomType.charAt(0).toUpperCase() + roomData.roomType.slice(1)} room`
     : '—';
+  const occupancyPercent = roomData.capacity.total > 0
+    ? Math.min(100, Math.round((roomData.capacity.current / roomData.capacity.total) * 100))
+    : 0;
 
   const handleSubmitRequest = async () => {
     if (!currentUser?.userId) {
@@ -193,15 +249,34 @@ const Room = () => {
       {!loading && !error && (
       <div className="room-content">
         <section className="room-overview-card">
-          <div className="room-number">{roomData.roomNumber}</div>
+          <div className="room-number-wrap">
+            <div className="room-number-label">Room Number</div>
+            <div className="room-number">{roomData.roomNumber}</div>
+          </div>
           <div className="room-meta">
             <span className="zone-badge">{roomTypeLabel}</span>
+          </div>
+          <div className="room-quick-metrics">
+            <div className="metric-pill">
+              <span className="metric-pill-label">Occupancy</span>
+              <span className="metric-pill-value">{occupancyPercent}%</span>
+            </div>
+            <div className="metric-pill">
+              <span className="metric-pill-label">Status</span>
+              <span className="metric-pill-value">{roomData.status}</span>
+            </div>
+            {roomData.rent !== null && (
+              <div className="metric-pill">
+                <span className="metric-pill-label">Rent</span>
+                <span className="metric-pill-value">₹{roomData.rent}</span>
+              </div>
+            )}
           </div>
           <div className="room-info-grid">
             <div className="room-info-item">
               <span className="info-icon">🏢</span>
               <span className="info-label">Block</span>
-              <span className="info-value">{roomData.block}</span>
+              <span className="info-value">{getBlockLabel(roomData.block)}</span>
             </div>
             <div className="room-info-item">
               <span className="info-icon">📍</span>
@@ -220,23 +295,19 @@ const Room = () => {
               <span className="info-label">Status</span>
               <span className="info-value">{roomData.status}</span>
             </div>
-            {roomData.rent !== null && (
-              <div className="room-info-item">
-                <span className="info-icon">💰</span>
-                <span className="info-label">Rent / Month</span>
-                <span className="info-value">₹{roomData.rent}</span>
-              </div>
-            )}
           </div>
         </section>
 
         <section className="roommate-card">
           <h2 className="card-title">Roommate</h2>
           {roommates.length > 0 ? (
-            roommates.map((roommate) => (
+            roommates.map((roommate, index) => (
               <div className="roommate-content" key={roommate.user_id}>
-                <div className="roommate-avatar">
-                  {roommate.name?.split(' ').map((n) => n[0]).join('') || 'S'}
+                <div className="roommate-avatar-wrap">
+                  <div className="roommate-avatar">
+                    {roommate.name?.split(' ').map((n) => n[0]).join('') || 'S'}
+                  </div>
+                  <span className="roommate-chip">Mate {index + 1}</span>
                 </div>
                 <div className="roommate-info">
                   <div className="roommate-name">{roommate.name}</div>
@@ -316,7 +387,7 @@ const Room = () => {
                     <input
                       type="text"
                       className="request-input"
-                      value={`Block ${roomData.block}`}
+                      value={getBlockLabel(roomData.block)}
                       disabled
                       readOnly
                     />

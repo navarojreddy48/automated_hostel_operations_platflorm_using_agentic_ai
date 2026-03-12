@@ -41,24 +41,8 @@ const StudentRegistration = () => {
     paymentProofUrl: '',  // URL of uploaded payment proof
   });
 
-  // Fetch hostel blocks and academic settings
+  // Fetch academic settings on mount
   useEffect(() => {
-    const fetchHostelBlocks = async () => {
-      setLoadingBlocks(true);
-      try {
-        const response = await fetch('http://localhost:5000/api/admin/hostel-blocks');
-        const data = await response.json();
-        
-        if (data.success && Array.isArray(data.data)) {
-          setHostelBlocks(data.data);
-        }
-      } catch (error) {
-        console.error('Error fetching hostel blocks:', error);
-      } finally {
-        setLoadingBlocks(false);
-      }
-    };
-
     const fetchAcademicSettings = async () => {
       try {
         const [collegesRes, branchesRes] = await Promise.all([
@@ -81,16 +65,52 @@ const StudentRegistration = () => {
       }
     };
 
-    fetchHostelBlocks();
     fetchAcademicSettings();
   }, []);
+
+  // Fetch hostel blocks based on selected student gender
+  useEffect(() => {
+    const selectedGender = (formData.gender || '').toLowerCase();
+
+    if (!selectedGender) {
+      setHostelBlocks([]);
+      return;
+    }
+
+    if (!['male', 'female'].includes(selectedGender)) {
+      setHostelBlocks([]);
+      return;
+    }
+
+    const fetchHostelBlocks = async () => {
+      setLoadingBlocks(true);
+      try {
+        const response = await fetch(`http://localhost:5000/api/admin/hostel-blocks?gender=${selectedGender}`);
+        const data = await response.json();
+
+        if (data.success && Array.isArray(data.data)) {
+          setHostelBlocks(data.data);
+        } else {
+          setHostelBlocks([]);
+        }
+      } catch (error) {
+        console.error('Error fetching hostel blocks:', error);
+        setHostelBlocks([]);
+      } finally {
+        setLoadingBlocks(false);
+      }
+    };
+
+    fetchHostelBlocks();
+  }, [formData.gender]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: value,
-      ...(name === 'collegeName' && value !== 'Other' ? { collegeOther: '' } : {})
+      ...(name === 'collegeName' && value !== 'Other' ? { collegeOther: '' } : {}),
+      ...(name === 'gender' ? { hostelBlock: '' } : {})
     }));
   };
 
@@ -192,6 +212,11 @@ const StudentRegistration = () => {
     // Validate password strength
     if (formData.password.length < 6) {
       alert('Password must be at least 6 characters long');
+      return;
+    }
+
+    if (!['male', 'female'].includes((formData.gender || '').toLowerCase())) {
+      alert('Please select a valid gender (Male or Female)');
       return;
     }
 
@@ -391,7 +416,6 @@ const StudentRegistration = () => {
                         <option value="">Select Gender</option>
                         <option value="male">Male</option>
                         <option value="female">Female</option>
-                        <option value="other">Other</option>
                       </select>
                     </div>
                   </div>
@@ -555,6 +579,10 @@ const StudentRegistration = () => {
                     <div style={{textAlign: 'center', padding: '2rem', color: '#64748b'}}>
                       Loading hostel blocks...
                     </div>
+                  ) : !formData.gender ? (
+                    <div style={{textAlign: 'center', padding: '2rem', color: '#64748b'}}>
+                      Select your gender in Step 1 to view available hostel blocks.
+                    </div>
                   ) : hostelBlocks.length > 0 ? (
                     <div className="radio-group">
                       {hostelBlocks.map((block) => (
@@ -570,7 +598,7 @@ const StudentRegistration = () => {
                           <span className="radio-text">
                             {block.block_name}
                             <small style={{display: 'block', fontSize: '0.85em', color: '#64748b', marginTop: '0.25rem'}}>
-                              {block.total_floors} floors • {(block.total_floors || 1) * (block.rooms_per_floor || 0)} rooms
+                              {block.total_floors} floors - {(block.total_floors || 1) * (block.rooms_per_floor || 0)} rooms
                             </small>
                           </span>
                         </label>
@@ -578,7 +606,7 @@ const StudentRegistration = () => {
                     </div>
                   ) : (
                     <div style={{textAlign: 'center', padding: '2rem', color: '#ef4444'}}>
-                      No hostel blocks available. Please contact admin.
+                      No hostel blocks available for your selected gender. Please contact admin.
                     </div>
                   )}
                 </div>
@@ -879,4 +907,5 @@ const StudentRegistration = () => {
 };
 
 export default StudentRegistration;
+
 

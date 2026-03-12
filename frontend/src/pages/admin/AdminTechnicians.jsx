@@ -281,7 +281,7 @@ const AdminTechnicians = () => {
           <p className="page-subtitle">Manage maintenance technicians</p>
         </div>
         <button className="btn-primary btn-add" onClick={handleAddTechnician}>
-          âž• Add Technician
+          Add Technician
         </button>
       </div>
 
@@ -348,7 +348,7 @@ const AdminTechnicians = () => {
                 <th>Category / Skill</th>
                 <th>Phone Number</th>
                 <th>Status</th>
-                <th>Actions</th>
+                <th className="actions-column">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -375,7 +375,7 @@ const AdminTechnicians = () => {
                       {tech.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
                     </span>
                   </td>
-                  <td>
+                  <td className="actions-column">
                     <div className="actions-cell">
                       <button 
                         className="btn-action btn-view"
@@ -586,7 +586,7 @@ const AdminTechnicians = () => {
                 <div className="detail-row">
                   <span className="detail-label">Joining Date</span>
                   <span className="detail-value">
-                    {new Date(selectedTechnician.joiningDate).toLocaleDateString('en-US', {
+                    {new Date(selectedTechnician.joiningDate).toLocaleDateString('en-GB', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric'
@@ -696,4 +696,7 @@ const AdminTechnicians = () => {
 };
 
 export default AdminTechnicians;
+
+
+
 

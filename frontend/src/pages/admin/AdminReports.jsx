@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import '../../styles/admin-reports.css';
 
 const AdminReports = () => {
@@ -140,7 +141,7 @@ const AdminReports = () => {
     setTimeout(() => {
       const newReport = {
         id: reports.length + 1,
-        name: `${selectedType} - ${new Date().toLocaleDateString()}`,
+        name: `${selectedType} - ${new Date().toLocaleDateString('en-GB')}`,
         description: `Auto-generated report for ${dateRange}`,
         lastUpdated: new Date().toISOString().split('T')[0],
         status: 'Ready',
@@ -156,49 +157,243 @@ const AdminReports = () => {
     setViewingReport(report);
   };
 
-  const handleDownloadReport = (report) => {
-    // Generate CSV or PDF content based on report type
-    const csvContent = generateReportContent(report);
-    const element = document.createElement('a');
-    const file = new Blob([csvContent], { type: 'text/csv' });
-    element.href = URL.createObjectURL(file);
-    element.download = `${report.name.replace(/\s+/g, '_')}_${new Date().getTime()}.csv`;
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+  const getReportConfig = (report) => {
+    const reportName = (report?.name || '').toLowerCase();
+    const reportType = (report?.type || '').toLowerCase();
+
+    if (reportType === 'occupancy' || reportName.includes('occupancy')) {
+      const totalRooms = analyticsData.totalRooms || 0;
+      const occupiedRooms = analyticsData.occupiedRooms || 0;
+      const vacantRooms = analyticsData.vacantRooms || 0;
+      const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
+
+      return {
+        sectionTitle: 'Room Occupancy Data',
+        rows: [
+          { label: 'Total Rooms', value: totalRooms.toString(), indicator: 'building' },
+          { label: 'Occupied Rooms', value: occupiedRooms.toString(), indicator: 'success' },
+          { label: 'Vacant Rooms', value: vacantRooms.toString(), indicator: 'warning' },
+          { label: 'Occupancy Rate', value: `${occupancyRate.toFixed(2)}%`, indicator: 'rate' }
+        ],
+        progress: {
+          title: 'Occupancy Progress',
+          value: occupancyRate,
+          display: `${occupancyRate.toFixed(2)}%`,
+          color: [37, 99, 235]
+        }
+      };
+    }
+
+    if (reportType === 'complaints' || reportName.includes('complaint')) {
+      const totalComplaints = analyticsData.totalComplaints || 0;
+      const pendingComplaints = analyticsData.pendingComplaints || 0;
+      const resolvedComplaints = Math.max(0, totalComplaints - pendingComplaints);
+      const resolutionRate = totalComplaints > 0 ? (resolvedComplaints / totalComplaints) * 100 : 0;
+
+      return {
+        sectionTitle: 'Complaint Statistics',
+        rows: [
+          { label: 'Total Complaints', value: totalComplaints.toString(), indicator: 'info' },
+          { label: 'Pending Complaints', value: pendingComplaints.toString(), indicator: 'warning' },
+          { label: 'Resolved Complaints', value: resolvedComplaints.toString(), indicator: 'success' },
+          { label: 'Resolution Rate', value: `${resolutionRate.toFixed(2)}%`, indicator: 'rate' }
+        ],
+        progress: {
+          title: 'Resolution Progress',
+          value: resolutionRate,
+          display: `${resolutionRate.toFixed(2)}%`,
+          color: [22, 163, 74]
+        }
+      };
+    }
+
+    if (reportType === 'outpass' || reportName.includes('outpass')) {
+      const totalOutpasses = analyticsData.totalOutpasses || 0;
+      const activeOutpasses = analyticsData.activeOutpasses || 0;
+      const completedOutpasses = Math.max(0, totalOutpasses - activeOutpasses);
+      const completionRate = totalOutpasses > 0 ? (completedOutpasses / totalOutpasses) * 100 : 0;
+
+      return {
+        sectionTitle: 'Outpass Statistics',
+        rows: [
+          { label: 'Total Outpasses', value: totalOutpasses.toString(), indicator: 'info' },
+          { label: 'Active Outpasses', value: activeOutpasses.toString(), indicator: 'warning' },
+          { label: 'Completed Outpasses', value: completedOutpasses.toString(), indicator: 'success' },
+          { label: 'Completion Rate', value: `${completionRate.toFixed(2)}%`, indicator: 'rate' }
+        ],
+        progress: {
+          title: 'Outpass Completion Progress',
+          value: completionRate,
+          display: `${completionRate.toFixed(2)}%`,
+          color: [14, 165, 233]
+        }
+      };
+    }
+
+    const totalStudents = analyticsData.totalStudents || 0;
+    const totalRooms = analyticsData.totalRooms || 0;
+    const occupancyRate = totalRooms > 0 ? ((analyticsData.occupiedRooms || 0) / totalRooms) * 100 : 0;
+
+    return {
+      sectionTitle: 'General Statistics',
+      rows: [
+        { label: 'Total Students', value: totalStudents.toString(), indicator: 'info' },
+        { label: 'Total Rooms', value: totalRooms.toString(), indicator: 'building' },
+        { label: 'Total Complaints', value: (analyticsData.totalComplaints || 0).toString(), indicator: 'warning' },
+        { label: 'Total Outpasses', value: (analyticsData.totalOutpasses || 0).toString(), indicator: 'rate' }
+      ],
+      progress: {
+        title: 'Occupancy Overview',
+        value: occupancyRate,
+        display: `${occupancyRate.toFixed(2)}%`,
+        color: [99, 102, 241]
+      }
+    };
   };
 
-  const generateReportContent = (report) => {
-    let content = `Report: ${report.name}\n`;
-    content += `Generated: ${new Date().toLocaleString()}\n`;
-    content += `Type: ${report.type}\n\n`;
-    content += `---REPORT CONTENT---\n\n`;
-    
-    if (report.type === 'occupancy' || report.name.includes('Occupancy')) {
-      content += `Room Occupancy Data\n`;
-      content += `Total Rooms,${analyticsData.totalRooms}\n`;
-      content += `Occupied Rooms,${analyticsData.occupiedRooms}\n`;
-      content += `Vacant Rooms,${analyticsData.vacantRooms}\n`;
-      content += `Occupancy Rate,${analyticsData.totalRooms > 0 ? ((analyticsData.occupiedRooms / analyticsData.totalRooms) * 100).toFixed(2) : 0}%\n`;
-    } else if (report.type === 'complaints' || report.name.includes('Complaint')) {
-      content += `Complaint Statistics\n`;
-      content += `Total Complaints,${analyticsData.totalComplaints}\n`;
-      content += `Pending Complaints,${analyticsData.pendingComplaints}\n`;
-      content += `Resolution Rate,${analyticsData.totalComplaints > 0 ? (((analyticsData.totalComplaints - analyticsData.pendingComplaints) / analyticsData.totalComplaints) * 100).toFixed(2) : 0}%\n`;
-    } else if (report.type === 'outpass' || report.name.includes('Outpass')) {
-      content += `Outpass Statistics\n`;
-      content += `Total Outpasses,${analyticsData.totalOutpasses}\n`;
-      content += `Active Outpasses,${analyticsData.activeOutpasses}\n`;
-      content += `Approval Rate,${analyticsData.totalOutpasses > 0 ? ((analyticsData.activeOutpasses / analyticsData.totalOutpasses) * 100).toFixed(2) : 0}%\n`;
-    } else {
-      content += `General Statistics\n`;
-      content += `Total Students,${analyticsData.totalStudents}\n`;
-      content += `Total Rooms,${analyticsData.totalRooms}\n`;
-      content += `Total Complaints,${analyticsData.totalComplaints}\n`;
-      content += `Total Outpasses,${analyticsData.totalOutpasses}\n`;
-    }
-    
-    return content;
+  const handleDownloadReport = (report) => {
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const marginX = 42;
+    const contentWidth = pageWidth - marginX * 2;
+
+    const reportConfig = getReportConfig(report);
+    const generatedAt = new Date().toLocaleString();
+
+    const drawBuildingIcon = (x, y) => {
+      pdf.setDrawColor(37, 99, 235);
+      pdf.setFillColor(219, 234, 254);
+      pdf.rect(x, y - 9, 10, 10, 'FD');
+      pdf.rect(x + 3, y - 13, 4, 4, 'FD');
+      pdf.line(x + 2, y - 6, x + 8, y - 6);
+      pdf.line(x + 2, y - 3, x + 8, y - 3);
+    };
+
+    const drawIndicator = (x, y, color) => {
+      pdf.setFillColor(color[0], color[1], color[2]);
+      pdf.circle(x + 5, y - 4, 4, 'F');
+    };
+
+    const getIndicatorColor = (indicatorType) => {
+      if (indicatorType === 'success') return [22, 163, 74];
+      if (indicatorType === 'warning') return [249, 115, 22];
+      if (indicatorType === 'info') return [37, 99, 235];
+      return [59, 130, 246];
+    };
+
+    // Light report background panel
+    pdf.setFillColor(248, 250, 252);
+    pdf.roundedRect(marginX - 8, 92, contentWidth + 16, pageHeight - 175, 10, 10, 'F');
+
+    // Header section
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(22);
+    pdf.setTextColor(17, 24, 39);
+    pdf.text(report?.name || 'Monthly Occupancy Report', marginX, 56);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('Hostel Management System', marginX, 74);
+
+    pdf.setFontSize(10);
+    pdf.setTextColor(51, 65, 85);
+    pdf.text(`Generated: ${generatedAt}`, pageWidth - marginX, 58, { align: 'right' });
+
+    pdf.setDrawColor(203, 213, 225);
+    pdf.setLineWidth(1);
+    pdf.line(marginX, 84, pageWidth - marginX, 84);
+
+    // Summary card section
+    const cardX = marginX + 18;
+    const cardY = 122;
+    const cardWidth = contentWidth - 36;
+    const headerHeight = 38;
+    const rowHeight = 34;
+    const rows = reportConfig.rows;
+    const cardHeight = headerHeight + rows.length * rowHeight + 22;
+
+    pdf.setFillColor(255, 255, 255);
+    pdf.setDrawColor(203, 213, 225);
+    pdf.setLineWidth(1);
+    pdf.roundedRect(cardX, cardY, cardWidth, cardHeight, 12, 12, 'FD');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(14);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(reportConfig.sectionTitle, cardX + 18, cardY + 24);
+
+    const tableTop = cardY + headerHeight;
+    pdf.setDrawColor(226, 232, 240);
+    pdf.line(cardX + 14, tableTop, cardX + cardWidth - 14, tableTop);
+
+    let rowY = tableTop + 23;
+    rows.forEach((row, index) => {
+      if (row.indicator === 'building') {
+        drawBuildingIcon(cardX + 20, rowY);
+      } else if (row.indicator === 'rate') {
+        pdf.setDrawColor(59, 130, 246);
+        pdf.setLineWidth(1.2);
+        pdf.circle(cardX + 25, rowY - 4, 4);
+      } else {
+        drawIndicator(cardX + 20, rowY, getIndicatorColor(row.indicator));
+      }
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(11);
+      pdf.setTextColor(30, 41, 59);
+      pdf.text(row.label, cardX + 36, rowY);
+
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(11);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text(row.value, cardX + cardWidth - 20, rowY, { align: 'right' });
+
+      if (index < rows.length - 1) {
+        pdf.setDrawColor(241, 245, 249);
+        pdf.line(cardX + 14, rowY + 10, cardX + cardWidth - 14, rowY + 10);
+      }
+
+      rowY += rowHeight;
+    });
+
+    // Occupancy progress bar
+    const progressTitleY = cardY + cardHeight + 34;
+    const progressX = cardX;
+    const progressY = progressTitleY + 14;
+    const progressWidth = cardWidth;
+    const progressHeight = 14;
+    const fillWidth = Math.max(0, Math.min(progressWidth, (reportConfig.progress.value / 100) * progressWidth));
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(30, 41, 59);
+    pdf.text(reportConfig.progress.title, progressX, progressTitleY);
+
+    pdf.setFillColor(226, 232, 240);
+    pdf.roundedRect(progressX, progressY, progressWidth, progressHeight, 7, 7, 'F');
+    pdf.setFillColor(reportConfig.progress.color[0], reportConfig.progress.color[1], reportConfig.progress.color[2]);
+    pdf.roundedRect(progressX, progressY, fillWidth, progressHeight, 7, 7, 'F');
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(10);
+    pdf.setTextColor(15, 23, 42);
+    pdf.text(reportConfig.progress.display, progressX + progressWidth, progressY + 11, { align: 'right' });
+
+    // Footer section
+    const footerLineY = pageHeight - 54;
+    pdf.setDrawColor(203, 213, 225);
+    pdf.line(marginX, footerLineY, pageWidth - marginX, footerLineY);
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.setTextColor(71, 85, 105);
+    pdf.text('Generated by HostelConnect - Automated Hostel Operations Platform', pageWidth / 2, footerLineY + 16, { align: 'center' });
+    pdf.text('Page 1', pageWidth / 2, footerLineY + 30, { align: 'center' });
+
+    const safeFileName = (report?.name || 'Monthly Occupancy Report').replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+    pdf.save(`${safeFileName || 'report'}_${new Date().getTime()}.pdf`);
   };
 
   return (
@@ -460,7 +655,7 @@ const AdminReports = () => {
                   </td>
                   <td className="report-description">{report.description}</td>
                   <td>
-                    {new Date(report.lastUpdated).toLocaleDateString('en-US', {
+                    {new Date(report.lastUpdated).toLocaleDateString('en-GB', {
                       month: 'short',
                       day: 'numeric',
                       year: 'numeric'
@@ -525,7 +720,7 @@ const AdminReports = () => {
                   <div className="detail-row">
                     <span className="detail-label">Last Updated:</span>
                     <span className="detail-value">
-                      {new Date(viewingReport.lastUpdated).toLocaleDateString('en-US', {
+                      {new Date(viewingReport.lastUpdated).toLocaleDateString('en-GB', {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric'
@@ -645,4 +840,5 @@ const AdminReports = () => {
 };
 
 export default AdminReports;
+
 

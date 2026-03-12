@@ -42,7 +42,7 @@ const TechnicianDashboard = () => {
           
           // Count by status (assigned and in_progress are "pending" in our dashboard)
           // Map 'assigned' status to 'pending' for the dashboard display
-          const pending = assignedComplaints.filter(c => c.status === 'assigned' || c.status === 'pending').length;
+          const pending = assignedComplaints.filter(c => c.status === 'assigned' || c.status === 'pending' || c.status === 'delayed').length;
           const inProgress = assignedComplaints.filter(c => c.status === 'in_progress').length;
           const resolved = assignedComplaints.filter(c => c.status === 'resolved').length;
           
@@ -106,7 +106,7 @@ const TechnicianDashboard = () => {
     // Status filter - treat 'assigned' and 'pending' as same
     if (filterStatus !== 'all') {
       if (filterStatus === 'pending') {
-        filtered = filtered.filter(c => c.status === 'pending' || c.status === 'assigned');
+        filtered = filtered.filter(c => c.status === 'pending' || c.status === 'assigned' || c.status === 'delayed');
       } else {
         filtered = filtered.filter(c => c.status === filterStatus);
       }
@@ -160,7 +160,7 @@ const TechnicianDashboard = () => {
         const updatedComplaints = complaints.map(c => 
           c.id === complaintId ? { ...c, status: newStatus } : c
         );
-        setPendingCount(updatedComplaints.filter(c => c.status === 'pending' || c.status === 'assigned').length);
+        setPendingCount(updatedComplaints.filter(c => c.status === 'pending' || c.status === 'assigned' || c.status === 'delayed').length);
         setInProgressCount(updatedComplaints.filter(c => c.status === 'in_progress').length);
         setResolvedCount(updatedComplaints.filter(c => c.status === 'resolved').length);
       } else {
@@ -186,7 +186,7 @@ const TechnicianDashboard = () => {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
     if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+    return date.toLocaleDateString('en-GB');
   };
 
   // View complaint details
@@ -202,7 +202,7 @@ const TechnicianDashboard = () => {
         <div className="tech-header-left">
           <h1 className="tech-title-main">My Tasks</h1>
           <p className="tech-subtitle">
-            {pendingCount + inProgressCount} tasks assigned to you
+            {pendingCount + inProgressCount} active tasks assigned to you
           </p>
         </div>
 
@@ -283,6 +283,7 @@ const TechnicianDashboard = () => {
           >
             <option value="all">All Status</option>
             <option value="pending">Pending (Assigned to me)</option>
+            <option value="delayed">Delayed</option>
             <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
           </select>
@@ -316,7 +317,7 @@ const TechnicianDashboard = () => {
           <div className="board-column pending-col">
             <div className="column-header">
               <h2 className="column-title">Pending</h2>
-              <span className="column-badge">{getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned').length}</span>
+              <span className="column-badge">{getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned' || c.status === 'delayed').length}</span>
             </div>
             <div className="column-content">
               {loading ? (
@@ -324,13 +325,13 @@ const TechnicianDashboard = () => {
                   <span className="empty-icon">⏳</span>
                   <p>Loading tasks...</p>
                 </div>
-              ) : getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned').length === 0 ? (
+              ) : getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned' || c.status === 'delayed').length === 0 ? (
                 <div className="empty-state">
                   <span className="empty-icon">⏳</span>
                   <p>No pending tasks assigned to you</p>
                 </div>
               ) : (
-                getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned').map(complaint => (
+                getFilteredComplaints().filter(c => c.status === 'pending' || c.status === 'assigned' || c.status === 'delayed').map(complaint => (
                   <div key={complaint.id} className="task-card pending-task">
                     <div className="task-header">
                       <h4 className="task-title">{complaint.issue_type}</h4>
@@ -505,13 +506,13 @@ const TechnicianDashboard = () => {
                       <td>{complaint.student_name || 'N/A'}</td>
                       <td>Room {complaint.room_number || complaint.location || 'N/A'}</td>
                       <td>
-                        <span className={`status-badge status-${complaint.status === 'assigned' ? 'pending' : complaint.status}`}>
-                          {complaint.status === 'assigned' ? 'Pending' : complaint.status === 'in_progress' ? 'In Progress' : complaint.status}
+                        <span className={`status-badge status-${complaint.status === 'assigned' || complaint.status === 'delayed' ? 'pending' : complaint.status}`}>
+                          {complaint.status === 'assigned' ? 'Pending' : complaint.status === 'delayed' ? 'Delayed' : complaint.status === 'in_progress' ? 'In Progress' : complaint.status}
                         </span>
                       </td>
                       <td className="time-cell">{formatDate(complaint.complaint_date || complaint.created_at)}</td>
                       <td className="actions-cell">
-                        {(complaint.status === 'pending' || complaint.status === 'assigned') && (
+                        {(complaint.status === 'pending' || complaint.status === 'assigned' || complaint.status === 'delayed') && (
                           <button
                             onClick={() => updateComplaintStatus(complaint.id, 'in_progress')}
                             disabled={updatingId === complaint.id}
@@ -566,8 +567,8 @@ const TechnicianDashboard = () => {
               </div>
               <div className="detail-row">
                 <span className="detail-label">Status:</span>
-                <span className={`status-badge status-${selectedComplaint.status === 'assigned' ? 'pending' : selectedComplaint.status}`}>
-                  {selectedComplaint.status === 'assigned' ? 'Pending (Assigned to me)' : selectedComplaint.status === 'in_progress' ? 'In Progress' : selectedComplaint.status}
+                <span className={`status-badge status-${selectedComplaint.status === 'assigned' || selectedComplaint.status === 'delayed' ? 'pending' : selectedComplaint.status}`}>
+                  {selectedComplaint.status === 'assigned' ? 'Pending (Assigned to me)' : selectedComplaint.status === 'delayed' ? 'Delayed' : selectedComplaint.status === 'in_progress' ? 'In Progress' : selectedComplaint.status}
                 </span>
               </div>
               <div className="detail-row">
@@ -592,7 +593,7 @@ const TechnicianDashboard = () => {
               )}
             </div>
             <div className="modal-footer">
-              {(selectedComplaint.status === 'pending' || selectedComplaint.status === 'assigned') && (
+              {(selectedComplaint.status === 'pending' || selectedComplaint.status === 'assigned' || selectedComplaint.status === 'delayed') && (
                 <button
                   onClick={() => {
                     updateComplaintStatus(selectedComplaint.id, 'in_progress');
@@ -629,4 +630,5 @@ const TechnicianDashboard = () => {
 };
 
 export default TechnicianDashboard;
+
 

@@ -153,15 +153,16 @@
   background: white;
   border-radius: 12px;
   border: 2px solid var(--gray-200);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
   overflow-x: auto;
+  overflow-y: visible;
+  box-shadow: var(--shadow-sm);
 }
 
 .technicians-table {
   width: 100%;
-  min-width: 1100px;
+  min-width: 1200px;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .technicians-table thead {
@@ -193,6 +194,12 @@
   padding: 1.25rem;
   font-size: 0.95rem;
   color: var(--text-dark);
+}
+
+.actions-column {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 /* Technician Cell */
@@ -283,7 +290,9 @@
 .actions-cell {
   display: flex;
   gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
+  min-width: max-content;
 }
 
 .btn-action {
@@ -736,10 +745,6 @@
   .form-group-row {
     grid-template-columns: 1fr;
   }
-
-  .technicians-table {
-    min-width: 100%;
-  }
 }
 
 @media (max-width: 1024px) {
@@ -815,7 +820,7 @@
   }
 
   .technicians-table {
-    min-width: 900px;
+    min-width: 1200px;
   }
 
   .technicians-table th,
@@ -913,7 +918,7 @@
   }
 
   .technicians-table {
-    min-width: 700px;
+    min-width: 1200px;
     font-size: 0.75rem;
   }
 

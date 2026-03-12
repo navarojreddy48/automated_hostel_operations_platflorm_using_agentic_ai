@@ -6,7 +6,7 @@ const AdminRegistrations = () => {
   const [registrations, setRegistrations] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch pending registrations from database
+  // Fetch registrations from database
   useEffect(() => {
     fetchRegistrations();
   }, []);
@@ -14,11 +14,28 @@ const AdminRegistrations = () => {
   const fetchRegistrations = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/admin/registrations/pending');
-      const data = await res.json();
-      
-      if (data.success && Array.isArray(data.data)) {
-        setRegistrations(data.data);
+      const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+        fetch('http://localhost:5000/api/admin/registrations/pending'),
+        fetch('http://localhost:5000/api/admin/registrations/approved'),
+        fetch('http://localhost:5000/api/admin/registrations/rejected')
+      ]);
+
+      const [pendingData, approvedData, rejectedData] = await Promise.all([
+        pendingRes.json(),
+        approvedRes.json(),
+        rejectedRes.json()
+      ]);
+
+      const combinedRegistrations = [
+        ...(pendingData.success && Array.isArray(pendingData.data) ? pendingData.data : []),
+        ...(approvedData.success && Array.isArray(approvedData.data) ? approvedData.data : []),
+        ...(rejectedData.success && Array.isArray(rejectedData.data) ? rejectedData.data : [])
+      ];
+
+      if (combinedRegistrations.length > 0) {
+        setRegistrations(combinedRegistrations);
+      } else {
+        setRegistrations([]);
       }
       setLoading(false);
     } catch (error) {
@@ -224,7 +241,7 @@ const AdminRegistrations = () => {
                   </td>
                   <td>{reg.year || 'N/A'}</td>
                   <td>{reg.phone || 'N/A'}</td>
-                  <td>{new Date(reg.submitted_date).toLocaleDateString()}</td>
+                  <td>{new Date(reg.submitted_date).toLocaleDateString('en-GB')}</td>
                   <td>
                     <span className={`status-badge status-${reg.registration_status.toLowerCase()}`}>
                       {reg.registration_status.charAt(0).toUpperCase() + reg.registration_status.slice(1)}
@@ -441,4 +458,5 @@ const AdminRegistrations = () => {
 };
 
 export default AdminRegistrations;
+
 

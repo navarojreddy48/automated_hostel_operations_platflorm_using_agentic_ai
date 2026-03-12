@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import '../../styles/warden-complaints.css';
 
 const WardenComplaints = () => {
@@ -7,17 +7,27 @@ const WardenComplaints = () => {
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('pending');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assigningTechId, setAssigningTechId] = useState('');
   const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignMessage, setAssignMessage] = useState({ type: '', text: '' });
+  const assignCloseTimerRef = useRef(null);
 
   // Fetch Data on Mount
   useEffect(() => {
     loadAllData();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (assignCloseTimerRef.current) {
+        clearTimeout(assignCloseTimerRef.current);
+      }
+    };
   }, []);
 
   // Fetch Complaints and Technicians
@@ -54,23 +64,42 @@ const WardenComplaints = () => {
 
   // Count complaints by status
   const statusCounts = useMemo(() => {
+    const hasTechnicianStarted = (complaint) => Boolean(complaint?.last_technician_update_at);
+
     return {
       all: complaints.length,
-      pending: complaints.filter(c => c.status === 'pending').length,
-      assigned: complaints.filter(c => c.status === 'assigned').length,
-      in_progress: complaints.filter(c => c.status === 'in_progress').length,
+      pending: complaints.filter(c =>
+        c.status === 'pending' ||
+        c.status === 'assigned' ||
+        (c.status === 'delayed' && !hasTechnicianStarted(c))
+      ).length,
+      in_progress: complaints.filter(c =>
+        c.status === 'in_progress' ||
+        (c.status === 'delayed' && hasTechnicianStarted(c))
+      ).length,
       delayed: complaints.filter(c => c.status === 'delayed').length,
       resolved: complaints.filter(c => c.status === 'resolved').length,
-      closed: complaints.filter(c => c.status === 'closed').length,
     };
   }, [complaints]);
 
   // Filter complaints
   const filteredComplaints = useMemo(() => {
     let filtered = complaints;
+    const hasTechnicianStarted = (complaint) => Boolean(complaint?.last_technician_update_at);
 
     // Filter by status
-    if (statusFilter !== 'all') {
+    if (statusFilter === 'pending') {
+      filtered = filtered.filter(c =>
+        c.status === 'pending' ||
+        c.status === 'assigned' ||
+        (c.status === 'delayed' && !hasTechnicianStarted(c))
+      );
+    } else if (statusFilter === 'in_progress') {
+      filtered = filtered.filter(c =>
+        c.status === 'in_progress' ||
+        (c.status === 'delayed' && hasTechnicianStarted(c))
+      );
+    } else if (statusFilter !== 'all') {
       filtered = filtered.filter(c => c.status === statusFilter);
     }
 
@@ -121,20 +150,33 @@ const WardenComplaints = () => {
   const handleAssignClick = (complaint) => {
     setSelectedComplaint(complaint);
     setAssigningTechId('');
+    setAssignMessage({ type: '', text: '' });
     setShowAssignModal(true);
+  };
+
+  const closeAssignModal = () => {
+    if (assignCloseTimerRef.current) {
+      clearTimeout(assignCloseTimerRef.current);
+      assignCloseTimerRef.current = null;
+    }
+    setShowAssignModal(false);
+    setSelectedComplaint(null);
+    setAssigningTechId('');
+    setAssignMessage({ type: '', text: '' });
   };
 
   // Assign technician
   const handleAssignTechnician = async () => {
     if (!selectedComplaint || !assigningTechId) {
-      alert('Please select a technician');
+      setAssignMessage({ type: 'error', text: 'Please select a technician' });
       return;
     }
 
     setAssignSubmitting(true);
+    setAssignMessage({ type: '', text: '' });
     try {
       const response = await fetch(
-        `/api/warden/complaint/${selectedComplaint.id}/assign`,
+        `http://localhost:5000/api/warden/complaint/${selectedComplaint.id}/assign`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -142,20 +184,35 @@ const WardenComplaints = () => {
         }
       );
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data = null;
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          throw new Error(`Unexpected server response (status ${response.status})`);
+        }
+      }
+
+      if (!data) {
+        throw new Error(`Empty server response (status ${response.status})`);
+      }
 
       if (data.success) {
         await loadAllData();
-        setShowAssignModal(false);
-        setSelectedComplaint(null);
-        setAssigningTechId('');
-        alert('Complaint assigned successfully!');
+        setAssignMessage({ type: 'success', text: 'Complaint assigned successfully!' });
+        if (assignCloseTimerRef.current) {
+          clearTimeout(assignCloseTimerRef.current);
+        }
+        assignCloseTimerRef.current = setTimeout(() => {
+          closeAssignModal();
+        }, 1500);
       } else {
-        alert(`Error: ${data.message || 'Failed to assign complaint'}`);
+        setAssignMessage({ type: 'error', text: data.message || 'Failed to assign complaint' });
       }
     } catch (err) {
       console.error('Error:', err);
-      alert(`Error: ${err.message}`);
+      setAssignMessage({ type: 'error', text: err.message || 'Failed to assign complaint' });
     } finally {
       setAssignSubmitting(false);
     }
@@ -203,12 +260,6 @@ const WardenComplaints = () => {
                 Pending ({statusCounts.pending})
               </button>
               <button
-                className={`filter-btn ${statusFilter === 'assigned' ? 'active' : ''}`}
-                onClick={() => setStatusFilter('assigned')}
-              >
-                Assigned ({statusCounts.assigned})
-              </button>
-              <button
                 className={`filter-btn ${statusFilter === 'in_progress' ? 'active' : ''}`}
                 onClick={() => setStatusFilter('in_progress')}
               >
@@ -225,12 +276,6 @@ const WardenComplaints = () => {
                 onClick={() => setStatusFilter('resolved')}
               >
                 Resolved ({statusCounts.resolved})
-              </button>
-              <button
-                className={`filter-btn ${statusFilter === 'closed' ? 'active' : ''}`}
-                onClick={() => setStatusFilter('closed')}
-              >
-                Closed ({statusCounts.closed})
               </button>
             </div>
 
@@ -289,7 +334,7 @@ const WardenComplaints = () => {
                         <div>
                           <div className="student-name">{complaint.student_name}</div>
                           <div className="student-details">
-                            {complaint.roll_number} • Room {complaint.room_number} • {complaint.block_name}
+                            {complaint.roll_number} - Room {complaint.room_number} - {complaint.block_name}
                           </div>
                         </div>
                       </div>
@@ -416,7 +461,7 @@ const WardenComplaints = () => {
                       <div className="detail-item">
                         <span className="label">Assigned Date:</span>
                         <span className="value">
-                          {selectedComplaint.assigned_at && new Date(selectedComplaint.assigned_at).toLocaleDateString()}
+                          {selectedComplaint.assigned_at && new Date(selectedComplaint.assigned_at).toLocaleDateString('en-GB')}
                         </span>
                       </div>
                     </div>
@@ -442,11 +487,11 @@ const WardenComplaints = () => {
 
         {/* Assign Modal */}
         {showAssignModal && selectedComplaint && (
-          <div className="modal-overlay" onClick={() => setShowAssignModal(false)}>
+          <div className="modal-overlay" onClick={closeAssignModal}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>Assign Complaint to Technician</h2>
-                <button className="modal-close" onClick={() => setShowAssignModal(false)}>×</button>
+                <button className="modal-close" onClick={closeAssignModal}>×</button>
               </div>
 
               <div className="modal-body">
@@ -467,18 +512,35 @@ const WardenComplaints = () => {
                   >
                     <option value="">-- Choose a technician --</option>
                     {technicians.map((tech) => (
-                      <option key={tech.id} value={tech.id}>
+                      <option key={tech.user_id || tech.id} value={tech.user_id || tech.id}>
                         {tech.name} ({tech.specialization})
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {assignMessage.text && (
+                  <div
+                    role="alert"
+                    style={{
+                      marginTop: '12px',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1px solid ${assignMessage.type === 'success' ? '#16a34a' : '#dc2626'}`,
+                      background: assignMessage.type === 'success' ? '#f0fdf4' : '#fef2f2',
+                      color: assignMessage.type === 'success' ? '#166534' : '#991b1b',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {assignMessage.text}
+                  </div>
+                )}
               </div>
 
               <div className="modal-footer">
                 <button
                   className="btn-secondary"
-                  onClick={() => setShowAssignModal(false)}
+                  onClick={closeAssignModal}
                   disabled={assignSubmitting}
                 >
                   Cancel
@@ -499,4 +561,6 @@ const WardenComplaints = () => {
 };
 
 export default WardenComplaints;
+
+
 

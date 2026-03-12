@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   username VARCHAR(50) UNIQUE,
   password VARCHAR(255) NOT NULL,
   role ENUM('student', 'warden', 'admin', 'technician', 'security') NOT NULL,
-  staff_id VARCHAR(10) UNIQUE,
+  staff_id VARCHAR(20) UNIQUE,
   status ENUM('active', 'inactive') DEFAULT 'active',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS students (
   phone VARCHAR(20),
   parent_phone VARCHAR(20),
   parent_name VARCHAR(100),
+  parent_email VARCHAR(150),
   address TEXT,
   blood_group VARCHAR(10),
   emergency_contact VARCHAR(20),
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS students (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_roll_number (roll_number),
   INDEX idx_college_name (college_name),
+  INDEX idx_parent_email (parent_email),
   INDEX idx_registration_status (registration_status),
   INDEX idx_fee_status (fee_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -105,6 +107,7 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS blocks (
   id INT AUTO_INCREMENT PRIMARY KEY,
   block_name VARCHAR(50) NOT NULL UNIQUE,
+  block_gender ENUM('male', 'female') NOT NULL,
   total_floors INT,
   warden_id INT,
   description TEXT,
@@ -112,6 +115,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   
   INDEX idx_block_name (block_name),
+  INDEX idx_block_gender (block_gender),
   INDEX idx_warden_id (warden_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -201,7 +205,13 @@ CREATE TABLE IF NOT EXISTS outpasses (
   out_time TIME NOT NULL,
   expected_return_time DATETIME NOT NULL,
   actual_return_time DATETIME,
-  status ENUM('pending', 'approved', 'rejected', 'exited', 'returned', 'overdue') DEFAULT 'pending',
+  status ENUM('pending', 'pending_otp', 'approved', 'approved_otp', 'rejected', 'exited', 'returned', 'overdue') DEFAULT 'pending',
+  approval_method ENUM('manual', 'otp') DEFAULT 'manual',
+  otp_code VARCHAR(64),
+  otp_sent_at DATETIME,
+  otp_verified_at DATETIME,
+  otp_attempts INT DEFAULT 0,
+  holiday_mode_request TINYINT(1) DEFAULT 0,
   approved_by INT,
   approved_at TIMESTAMP NULL,
   rejection_reason TEXT,
@@ -234,6 +244,19 @@ CREATE TABLE IF NOT EXISTS outpasses (
   INDEX idx_outpass_risk_level (risk_level),
   INDEX fk_exit_logged_by (exit_logged_by),
   INDEX fk_return_logged_by (return_logged_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- System settings (holiday mode and global toggles)
+CREATE TABLE IF NOT EXISTS system_settings (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  setting_key VARCHAR(100) UNIQUE NOT NULL,
+  setting_value TEXT,
+  description VARCHAR(255),
+  updated_by INT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_setting_key (setting_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ========================================
@@ -696,6 +719,25 @@ CREATE TABLE IF NOT EXISTS notifications (
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Audit logs for security-sensitive actions
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  actor_identifier VARCHAR(255) NULL,
+  actor_role VARCHAR(50) NULL,
+  action VARCHAR(100) NOT NULL,
+  target_type VARCHAR(100) NULL,
+  target_id VARCHAR(100) NULL,
+  outcome ENUM('success', 'failure') NOT NULL,
+  details TEXT NULL,
+  request_id VARCHAR(64) NULL,
+  ip_address VARCHAR(64) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_user_id (user_id),
+  INDEX idx_audit_action (action),
+  INDEX idx_audit_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ========================================
 -- ADD FOREIGN KEY TO STUDENTS TABLE
 -- ========================================
@@ -704,38 +746,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE students 
   ADD CONSTRAINT fk_student_room 
   FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL;
-
--- ========================================
--- DEMO DATA (For Testing)
--- ========================================
-
--- Insert demo users (passwords should be hashed by backend)
--- These will be created via /api/create-demo-users endpoint
-
--- Demo Login Credentials:
--- Student:     student@hostel.edu     / student123
--- Warden:      warden@hostel.edu      / warden123
--- Admin:       admin@hostel.edu       / admin123
--- Technician:  technician@hostel.edu  / tech123
--- Security:    security@hostel.edu    / security123
-
--- Insert sample hostel blocks
-INSERT INTO blocks (block_name, total_floors, description, status) VALUES
-('Block A', 4, 'Boys Hostel - Main Block', 'active'),
-('Block B', 4, 'Boys Hostel - Annexe', 'active'),
-('Block C', 3, 'Girls Hostel', 'active');
-
--- Insert sample rooms
-INSERT INTO rooms (block_id, room_number, floor, capacity, occupied_count, room_type, rent_per_month, status) VALUES
-(1, '101', 1, 2, 0, 'shared', 5000.00, 'available'),
-(1, '102', 1, 2, 0, 'shared', 5000.00, 'available'),
-(1, '103', 1, 1, 0, 'single', 8000.00, 'available'),
-(1, '201', 2, 2, 0, 'shared', 5000.00, 'available'),
-(1, '202', 2, 2, 0, 'shared', 5000.00, 'available'),
-(2, '101', 1, 2, 0, 'shared', 5000.00, 'available'),
-(2, '102', 1, 2, 0, 'shared', 5000.00, 'available'),
-(3, '101', 1, 2, 0, 'shared', 5500.00, 'available'),
-(3, '102', 1, 1, 0, 'single', 8500.00, 'available');
 
 -- ========================================
 -- VIEWS (For Quick Access)

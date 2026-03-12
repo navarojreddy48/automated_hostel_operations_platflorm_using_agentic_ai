@@ -326,7 +326,7 @@ const WardenAgenticAlerts = () => {
                     <div>
                       <div className="leave-name">{request.student_name || 'N/A'}</div>
                       <div className="leave-meta">
-                        {request.roll_number || 'N/A'} · Room {request.room_number || 'N/A'}
+                        {request.roll_number || 'N/A'} - Room {request.room_number || 'N/A'}
                       </div>
                     </div>
                     <div className="leave-tags">
@@ -343,9 +343,9 @@ const WardenAgenticAlerts = () => {
                     <div className="leave-label" style={{ color: '#991b1b' }}>Outpass Alert</div>
                     <div className="leave-value" style={{ color: '#7f1d1d' }}>
                       {request.alert_to_student && 'Student email sent'}
-                      {request.alert_to_student && request.alert_to_parent && ' · '}
+                      {request.alert_to_student && request.alert_to_parent && ' - '}
                       {request.alert_to_parent && 'Parent email sent'}
-                      {request.alert_sent_at && ` · ${new Date(request.alert_sent_at).toLocaleString()}`}
+                      {request.alert_sent_at && ` - ${new Date(request.alert_sent_at).toLocaleString()}`}
                     </div>
                   </div>
 
@@ -423,4 +423,5 @@ const WardenAgenticAlerts = () => {
 };
 
 export default WardenAgenticAlerts;
+
 

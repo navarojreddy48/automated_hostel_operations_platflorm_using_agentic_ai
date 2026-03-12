@@ -1,5 +1,6 @@
 :root {
   --accent: #3b82f6;
+  --accent-dark: #1d4ed8;
   --accent-light: #eff6ff;
   --text-dark: #1f2937;
   --text-light: #6b7280;
@@ -36,7 +37,7 @@
 .room-header {
   padding: 32px;
   border-bottom: 1px solid var(--border);
-  background-color: var(--white);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -57,21 +58,23 @@
 }
 
 .request-room-change-btn {
-  padding: 10px 20px;
-  background-color: var(--accent);
+  padding: 11px 20px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: var(--white);
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
   white-space: nowrap;
+  box-shadow: 0 8px 22px rgba(37, 99, 235, 0.25);
 }
 
 .request-room-change-btn:hover {
-  background-color: #2563eb;
-  box-shadow: var(--shadow-md);
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.32);
 }
 
 .request-room-change-btn:active {
@@ -80,7 +83,7 @@
 
 .room-content {
   flex: 1;
-  padding: 32px;
+  padding: 28px 32px 32px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px;
@@ -90,13 +93,28 @@
 
 .room-overview-card {
   grid-column: 1 / -1;
-  background: linear-gradient(135deg, var(--gradient-blue), var(--gradient-teal));
-  border-radius: 12px;
+  background: linear-gradient(130deg, #2476e4 0%, #1893db 55%, #09b4cc 100%);
+  border-radius: 18px;
   padding: 40px;
   color: var(--white);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 18px 38px rgba(30, 64, 175, 0.24);
   position: relative;
   overflow: hidden;
+}
+
+.room-number-wrap {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 10px;
+}
+
+.room-number-label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 6px;
 }
 
 .room-overview-card::before {
@@ -112,15 +130,19 @@
 }
 
 .room-number {
-  font-size: 64px;
-  font-weight: 700;
-  margin-bottom: 12px;
+  font-size: 72px;
+  line-height: 1;
+  font-weight: 800;
+  margin-bottom: 0;
   position: relative;
   z-index: 1;
+  letter-spacing: 1px;
+  color: #ffffff;
+  text-shadow: 0 10px 24px rgba(8, 47, 73, 0.35);
 }
 
 .room-meta {
-  margin-bottom: 28px;
+  margin-bottom: 18px;
   position: relative;
   z-index: 1;
 }
@@ -129,16 +151,51 @@
   display: inline-block;
   padding: 6px 16px;
   background-color: rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 20px;
   font-size: 13px;
   font-weight: 600;
+  color: #ffffff;
   backdrop-filter: blur(4px);
+}
+
+.room-quick-metrics {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.metric-pill {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 12px;
+  padding: 10px 14px;
+  min-width: 132px;
+  backdrop-filter: blur(4px);
+}
+
+.metric-pill-label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 2px;
+}
+
+.metric-pill-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .room-info-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
   position: relative;
   z-index: 1;
 }
@@ -146,7 +203,11 @@
 .room-info-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 14px;
 }
 
 .info-icon {
@@ -155,15 +216,42 @@
 
 .info-label {
   font-size: 12px;
-  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.92);
   text-transform: uppercase;
   font-weight: 600;
   letter-spacing: 0.5px;
 }
 
 .info-value {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Prevent class-name collisions from other page styles */
+.room-overview-card .room-number-label {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.room-overview-card .room-number {
+  color: #ffffff;
+  text-shadow: 0 10px 24px rgba(8, 47, 73, 0.35);
+}
+
+.room-overview-card .zone-badge {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.room-overview-card .metric-pill-label,
+.room-overview-card .info-label {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.room-overview-card .metric-pill-value,
+.room-overview-card .info-value {
+  color: #ffffff;
 }
 
 /* ==================== CARDS ==================== */
@@ -180,24 +268,41 @@
 .guidelines-card {
   background-color: var(--white);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 24px;
   box-shadow: var(--shadow-sm);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .roommate-card:hover,
 .amenities-card:hover,
 .guidelines-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
 }
 
 /* ==================== ROOMMATE SECTION ==================== */
 
 .roommate-content {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid #e6edf8;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.roommate-content:last-child {
+  margin-bottom: 0;
+}
+
+.roommate-avatar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 .roommate-avatar {
@@ -212,6 +317,21 @@
   font-weight: 700;
   font-size: 24px;
   flex-shrink: 0;
+}
+
+.roommate-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  border: 1px solid #c8dbff;
+  color: #1e4bb8;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .roommate-info {
@@ -246,12 +366,13 @@
 
 .amenity-chip {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 16px;
-  background-color: var(--accent-light);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #f8fbff 0%, #edf4ff 100%);
+  border: 1px solid rgba(59, 130, 246, 0.24);
   border-radius: 12px;
   text-align: center;
   transition: all 0.2s ease;
@@ -264,13 +385,13 @@
 }
 
 .amenity-icon {
-  font-size: 28px;
+  font-size: 18px;
 }
 
 .amenity-name {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--text-dark);
+  color: #1e40af;
 }
 
 /* ==================== GUIDELINES SECTION ==================== */
@@ -522,7 +643,7 @@
   }
 
   .room-info-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -555,13 +676,21 @@
     padding: 32px;
   }
 
-  .room-number {
-    font-size: 48px;
+  .room-overview-card .room-number {
+    font-size: 58px;
   }
 
   .room-info-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+  }
+
+  .room-quick-metrics {
+    margin-bottom: 18px;
+  }
+
+  .metric-pill {
+    min-width: 120px;
   }
 
   .amenities-grid {
@@ -600,8 +729,27 @@
     padding: 24px;
   }
 
-  .room-number {
-    font-size: 40px;
+  .room-overview-card .room-number {
+    font-size: 46px;
+  }
+
+  .room-overview-card .room-number-label {
+    font-size: 11px;
+  }
+
+  .room-quick-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .metric-pill {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+
+  .room-info-grid {
+    grid-template-columns: 1fr;
   }
 
   .info-icon {

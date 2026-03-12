@@ -10,46 +10,46 @@ const MessMenu = () => {
 
   const [messMenu, setMessMenu] = useState({
     Monday: {
-      breakfast: 'Idli, Sambar, Palli Chutney, Ginger Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Cabbage Fry, Tomato Dal, Drumstick Sambar • Curd, Papad & Chutneys',
-      snacks: 'Veg & Egg Noodles / Onion Samosa • Tea & Milk',
-      dinner: 'Plain Rice, Bobbatlu, Brinjal Curry, Kandagadala Curry, Methi Dal, Egg Fry, Tomato Rasam • Curd, Papad & Chutneys',
+      breakfast: 'Idli, Sambar, Palli Chutney, Ginger Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Cabbage Fry, Tomato Dal, Drumstick Sambar - Curd, Papad & Chutneys',
+      snacks: 'Veg & Egg Noodles / Onion Samosa - Tea & Milk',
+      dinner: 'Plain Rice, Bobbatlu, Brinjal Curry, Kandagadala Curry, Methi Dal, Egg Fry, Tomato Rasam - Curd, Papad & Chutneys',
     },
     Tuesday: {
-      breakfast: 'Uthappam / Pesarattu, Palli Chutney, Ginger Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Bendi Fry/Curry, Thotakura Dal, Miriyalu Rasam • Curd, Papad & Chutneys',
-      snacks: 'Veg Puff & Egg Puff • Tea & Milk',
-      dinner: 'Plain Rice, Mixed Vegetable Curry, Egg Curry, Dal Tadka, Chapathi, Carrot Sambar • Curd, Papad & Chutneys',
+      breakfast: 'Uthappam / Pesarattu, Palli Chutney, Ginger Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Bendi Fry/Curry, Thotakura Dal, Miriyalu Rasam - Curd, Papad & Chutneys',
+      snacks: 'Veg Puff & Egg Puff - Tea & Milk',
+      dinner: 'Plain Rice, Mixed Vegetable Curry, Egg Curry, Dal Tadka, Chapathi, Carrot Sambar - Curd, Papad & Chutneys',
     },
     Wednesday: {
-      breakfast: 'Wada, Sambar, Palli Chutney, Ginger Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Chikkudukaya Tomato Curry, Pumpkin Sambar, Dosakaya Dal • Curd, Papad & Chutneys',
-      snacks: 'Mixed Fruits (Separate) / Sweet Corn / Banana • Tea & Milk',
-      dinner: 'Plain Rice, Bagara Rice, Chicken Curry, Paneer Butter Masala, Pumpkin Sambar, Raita • Curd, Papad & Chutneys',
+      breakfast: 'Wada, Sambar, Palli Chutney, Ginger Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Chikkudukaya Tomato Curry, Pumpkin Sambar, Dosakaya Dal - Curd, Papad & Chutneys',
+      snacks: 'Mixed Fruits (Separate) / Sweet Corn / Banana - Tea & Milk',
+      dinner: 'Plain Rice, Bagara Rice, Chicken Curry, Paneer Butter Masala, Pumpkin Sambar, Raita - Curd, Papad & Chutneys',
     },
     Thursday: {
-      breakfast: 'Dosa, Aloo Masala Curry, Palli Chutney, Ginger Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Methi Dal, Donda Fry/Curry, Tomato Rasam • Curd, Papad & Chutneys',
-      snacks: 'Cool Cake / Pineapple Cake / Butterscotch Cake / Plum Cake • Tea & Milk',
-      dinner: 'Plain Rice, Chapathi, Dal Fry, Meal Maker / Rajma, Egg Burji / Egg Masala, Majjiga Charu • Curd, Papad & Chutneys',
+      breakfast: 'Dosa, Aloo Masala Curry, Palli Chutney, Ginger Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Methi Dal, Donda Fry/Curry, Tomato Rasam - Curd, Papad & Chutneys',
+      snacks: 'Cool Cake / Pineapple Cake / Butterscotch Cake / Plum Cake - Tea & Milk',
+      dinner: 'Plain Rice, Chapathi, Dal Fry, Meal Maker / Rajma, Egg Burji / Egg Masala, Majjiga Charu - Curd, Papad & Chutneys',
     },
     Friday: {
-      breakfast: 'Lemon Rice / Tamarind Rice, Upma, Bread Jam, Tomato Chutney, Palli Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Aahu Curry/Fry, Chukkakura Dal, Sorakaya Sambar • Curd, Papad & Chutneys',
-      snacks: 'Punugulu / Mirchi Bajji • Tea & Milk',
-      dinner: 'Plain Rice, Egg/Veg Fried Rice OR Veg Pulav, Tomato Egg Curry, Aahu Curry, Carrot Sambar • Curd, Papad & Chutneys',
+      breakfast: 'Lemon Rice / Tamarind Rice, Upma, Bread Jam, Tomato Chutney, Palli Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Aahu Curry/Fry, Chukkakura Dal, Sorakaya Sambar - Curd, Papad & Chutneys',
+      snacks: 'Punugulu / Mirchi Bajji - Tea & Milk',
+      dinner: 'Plain Rice, Egg/Veg Fried Rice OR Veg Pulav, Tomato Egg Curry, Aahu Curry, Carrot Sambar - Curd, Papad & Chutneys',
     },
     Saturday: {
-      breakfast: 'Mysore Bonda, Tomato Chutney, Palli Chutney • Tea & Milk',
-      lunch: 'Plain Rice, Mixed Veg Curry, Bachalakara Dal, Rasam/Sambar • Curd, Papad & Chutneys',
-      snacks: 'Dil Pasand / Donuts / Burger / Dil Kush • Tea & Milk',
-      dinner: 'Plain Rice, Sambar Rice, Thotakura Dal, Gobi Manchuria / Veg Manchuria, Miriyalu Rasam, Boiled Egg • Curd, Papad & Chutneys',
+      breakfast: 'Mysore Bonda, Tomato Chutney, Palli Chutney - Tea & Milk',
+      lunch: 'Plain Rice, Mixed Veg Curry, Bachalakara Dal, Rasam/Sambar - Curd, Papad & Chutneys',
+      snacks: 'Dil Pasand / Donuts / Burger / Dil Kush - Tea & Milk',
+      dinner: 'Plain Rice, Sambar Rice, Thotakura Dal, Gobi Manchuria / Veg Manchuria, Miriyalu Rasam, Boiled Egg - Curd, Papad & Chutneys',
     },
     Sunday: {
-      breakfast: 'Chapathi, Chole Curry • Tea & Milk',
-      lunch: 'Plain Rice, Brinjal Curry, Moong Dal, Carrot Sambar • Curd, Papad & Chutneys',
-      snacks: 'Cashew / Moon Fruit / Osmania Biscuits • Tea & Milk',
-      dinner: 'Plain Rice, Bagara Rice, Chicken Curry / Chicken Biryani, Paneer Butter Masala / Paneer Biryani, Carrot Sambar, Raita, Double Ka Meetha (2 times) / Semiya Payasam / Kadduka Kheer • Curd, Papad & Chutneys',
+      breakfast: 'Chapathi, Chole Curry - Tea & Milk',
+      lunch: 'Plain Rice, Brinjal Curry, Moong Dal, Carrot Sambar - Curd, Papad & Chutneys',
+      snacks: 'Cashew / Moon Fruit / Osmania Biscuits - Tea & Milk',
+      dinner: 'Plain Rice, Bagara Rice, Chicken Curry / Chicken Biryani, Paneer Butter Masala / Paneer Biryani, Carrot Sambar, Raita, Double Ka Meetha (2 times) / Semiya Payasam / Kadduka Kheer - Curd, Papad & Chutneys',
     },
   });
 
@@ -185,4 +185,5 @@ const MessMenu = () => {
 };
 
 export default MessMenu;
+
 

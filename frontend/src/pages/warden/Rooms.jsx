@@ -390,7 +390,7 @@ const Rooms = () => {
             id: request.id,
             studentName: request.student_name || 'N/A',
             reason: request.preference_reason || request.full_reason || 'N/A',
-            date: request.created_at ? new Date(request.created_at).toLocaleDateString() : 'N/A',
+            date: request.created_at ? new Date(request.created_at).toLocaleDateString('en-GB') : 'N/A',
             status: request.status || 'pending'
           }));
 
@@ -497,7 +497,7 @@ const Rooms = () => {
               <div className="room-card-header">
                 <div>
                   <h3 className="room-number">Room {room.roomNumber}</h3>
-                  <p className="room-location">{room.block} • {room.floor}</p>
+                  <p className="room-location">{room.block} - {room.floor}</p>
                 </div>
                 <span className={`status-badge ${getStatusBadgeClass(room)}`}>
                   {getRoomStatus(room)}
@@ -578,7 +578,7 @@ const Rooms = () => {
             <div className="modal-header">
               <div>
                 <h2>Room Details</h2>
-                <p className="modal-subtitle">Room {selectedRoom.roomNumber} • {selectedRoom.block}</p>
+                <p className="modal-subtitle">Room {selectedRoom.roomNumber} - {selectedRoom.block}</p>
               </div>
               <button className="modal-close" onClick={handleCloseModal}>×</button>
             </div>
@@ -698,7 +698,7 @@ const Rooms = () => {
                         <div className="student-avatar">{student.name.charAt(0)}</div>
                         <div className="student-info">
                           <p className="student-name">{student.name}</p>
-                          <p className="student-meta">{student.roll} • {student.branch}</p>
+                          <p className="student-meta">{student.roll} - {student.branch}</p>
                         </div>
                       </div>
                     ))}
@@ -785,4 +785,6 @@ const Rooms = () => {
 };
 
 export default Rooms;
+
+
 

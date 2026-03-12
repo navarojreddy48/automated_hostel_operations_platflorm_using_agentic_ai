@@ -52,7 +52,7 @@ const RegistrationStatus = () => {
     if (!value) return 'N/A';
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return 'N/A';
-    return date.toLocaleDateString(undefined, {
+    return date.toLocaleDateString('en-GB', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'

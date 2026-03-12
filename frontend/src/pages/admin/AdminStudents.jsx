@@ -498,7 +498,7 @@ const AdminStudents = () => {
                   <td>
                     <span className="branch-badge">{student.branch || 'N/A'}</span>
                   </td>
-                  <td>{student.year || 'N/A'}</td>
+                  <td>{formatYear(student.year)}</td>
                   <td>
                     <span className="fee-status-badge">
                       {student.fee_status || 'N/A'}
@@ -640,7 +640,7 @@ const AdminStudents = () => {
                   <div className="detail-row">
                     <span className="detail-label">Joining Date</span>
                     <span className="detail-value">
-                      {new Date(selectedStudent.joiningDate).toLocaleDateString('en-US', {
+                      {new Date(selectedStudent.joiningDate).toLocaleDateString('en-GB', {
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric'
@@ -954,4 +954,5 @@ const AdminStudents = () => {
 };
 
 export default AdminStudents;
+
 

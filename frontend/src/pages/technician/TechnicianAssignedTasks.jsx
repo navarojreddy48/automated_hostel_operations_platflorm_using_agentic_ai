@@ -157,6 +157,7 @@ const TechnicianAssignedTasks = () => {
     const labels = {
       assigned: 'Assigned',
       in_progress: 'In Progress',
+      delayed: 'Delayed',
       resolved: 'Resolved',
       pending: 'Pending'
     };
@@ -223,6 +224,12 @@ const TechnicianAssignedTasks = () => {
           onClick={() => setSelectedStatus('in_progress')}
         >
           In Progress ({tasks.filter(t => t.status === 'in_progress').length})
+        </button>
+        <button 
+          className={`filter-btn ${selectedStatus === 'delayed' ? 'active' : ''}`}
+          onClick={() => setSelectedStatus('delayed')}
+        >
+          Delayed ({tasks.filter(t => t.status === 'delayed').length})
         </button>
         <button 
           className={`filter-btn ${selectedStatus === 'resolved' ? 'active' : ''}`}
@@ -293,7 +300,7 @@ const TechnicianAssignedTasks = () => {
                 <div className="leave-card-top">
                   <div>
                     <div className="leave-name">{task.title}</div>
-                    <div className="leave-meta">#{task.id} · {task.category}</div>
+                    <div className="leave-meta">#{task.id} - {task.category}</div>
                   </div>
                   <div className="leave-tags">
                     <span className={`tag ${task.status}`}>{getStatusLabel(task.status)}</span>
@@ -318,7 +325,7 @@ const TechnicianAssignedTasks = () => {
                   </div>
                   <div>
                     <div className="leave-label">Request Date</div>
-                    <div className="leave-value">{task.created_at ? new Date(task.created_at).toLocaleDateString() : 'N/A'}</div>
+                    <div className="leave-value">{task.created_at ? new Date(task.created_at).toLocaleDateString('en-GB') : 'N/A'}</div>
                   </div>
                 </div>
 
@@ -346,7 +353,7 @@ const TechnicianAssignedTasks = () => {
                 {error && <div className="leave-error">{error}</div>}
 
                 <div className="leave-actions">
-                  {task.status === 'assigned' && (
+                  {(task.status === 'assigned' || task.status === 'delayed') && (
                     <button
                       className="action-btn approve"
                       onClick={() => startAction(task.id, 'start')}
@@ -366,7 +373,7 @@ const TechnicianAssignedTasks = () => {
                   )}
                 </div>
 
-                {draft && draft.mode === 'start' && task.status === 'assigned' && (
+                {draft && draft.mode === 'start' && (task.status === 'assigned' || task.status === 'delayed') && (
                   <>
                     <button
                       className="action-btn primary"
@@ -419,4 +426,6 @@ const TechnicianAssignedTasks = () => {
 };
 
 export default TechnicianAssignedTasks;
+
+
 

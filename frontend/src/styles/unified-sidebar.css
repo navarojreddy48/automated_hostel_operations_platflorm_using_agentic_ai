@@ -16,7 +16,7 @@
   box-shadow: 8px 0 26px rgba(15, 35, 74, 0.12);
   z-index: 1000;
   overflow: hidden;
-  transition: width 0.25s ease;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 320ms ease;
 }
 
 .unified-sidebar::-webkit-scrollbar {
@@ -70,6 +70,7 @@
   gap: 8px;
   min-width: 0;
   flex: 1;
+  transition: opacity 220ms ease, transform 220ms ease;
 }
 
 .sidebar-title-row {
@@ -86,6 +87,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity 200ms ease, max-width 260ms ease;
+  max-width: 180px;
 }
 
 .sidebar-toggle-btn {
@@ -116,6 +119,7 @@
   font-weight: 700;
   letter-spacing: 0.9px;
   text-transform: uppercase;
+  transition: opacity 200ms ease, transform 200ms ease;
 }
 
 .sidebar-menu {
@@ -165,6 +169,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 140px;
+  opacity: 1;
+  transform: translateX(0);
+  transition: opacity 180ms ease, max-width 240ms ease, transform 180ms ease;
 }
 
 .sidebar-item:hover {
@@ -188,7 +196,16 @@
 .unified-sidebar.collapsed .sidebar-title,
 .unified-sidebar.collapsed .sidebar-section-label,
 .unified-sidebar.collapsed .sidebar-item-label {
-  display: none;
+  opacity: 0;
+  max-width: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+}
+
+.unified-sidebar.collapsed .sidebar-brand-block {
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
 }
 
 .unified-sidebar.collapsed .sidebar-header {
@@ -272,5 +289,16 @@
 @media print {
   .unified-sidebar {
     display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unified-sidebar,
+  .sidebar-item,
+  .sidebar-item-label,
+  .sidebar-title,
+  .sidebar-brand-block,
+  .sidebar-section-label {
+    transition: none !important;
   }
 }

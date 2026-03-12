@@ -22,7 +22,7 @@ const WardenStudents = () => {
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/admin/users?role=student');
+      const res = await fetch('http://localhost:5000/api/warden/students');
       const data = await res.json();
       
       if (data.success && Array.isArray(data.data)) {

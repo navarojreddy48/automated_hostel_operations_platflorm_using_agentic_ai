@@ -23,10 +23,35 @@ const SecurityParcels = () => {
   const [newParcel, setNewParcel] = useState(buildDefaultParcel);
   const [addingParcel, setAddingParcel] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  const [alertModal, setAlertModal] = useState({
+    open: false,
+    title: '',
+    message: ''
+  });
 
   useEffect(() => {
     fetchParcels();
   }, []);
+
+  const openAlertModal = (title, message) => {
+    setAlertModal({ open: true, title, message });
+  };
+
+  // Fallback: route any native alert raised within this page flow to the in-app modal.
+  useEffect(() => {
+    const originalAlert = window.alert;
+    window.alert = (message) => {
+      setAlertModal({ open: true, title: 'Notice', message: String(message || '') });
+    };
+
+    return () => {
+      window.alert = originalAlert;
+    };
+  }, []);
+
+  const closeAlertModal = () => {
+    setAlertModal({ open: false, title: '', message: '' });
+  };
 
   const fetchParcels = async () => {
     setLoading(true);
@@ -58,12 +83,12 @@ const SecurityParcels = () => {
       if (data.success) {
         setParcels(data.data || []);
       } else {
-        alert('No parcels found for this roll number');
+        openAlertModal('No Results', 'No parcels found for this roll number.');
         setParcels([]);
       }
     } catch (error) {
       console.error('Error searching parcels:', error);
-      alert('Error searching parcels');
+      openAlertModal('Search Failed', 'Error searching parcels.');
     } finally {
       setLoading(false);
     }
@@ -86,11 +111,11 @@ const SecurityParcels = () => {
             item.id === id ? { ...item, status: 'notified' } : item
           )
         );
-        alert('Student notified successfully');
+        openAlertModal('Success', 'Student notified successfully.');
       }
     } catch (error) {
       console.error('Error marking notified:', error);
-      alert('Error marking parcel as notified');
+      openAlertModal('Action Failed', 'Error marking parcel as notified.');
     } finally {
       setActionLoading((prev) => ({ ...prev, [actionKey]: false }));
     }
@@ -113,11 +138,11 @@ const SecurityParcels = () => {
             item.id === id ? { ...item, status: 'collected' } : item
           )
         );
-        alert('Parcel marked as collected');
+        openAlertModal('Success', 'Parcel marked as collected.');
       }
     } catch (error) {
       console.error('Error marking collected:', error);
-      alert('Error marking parcel as collected');
+      openAlertModal('Action Failed', 'Error marking parcel as collected.');
     } finally {
       setActionLoading((prev) => ({ ...prev, [actionKey]: false }));
     }
@@ -137,12 +162,12 @@ const SecurityParcels = () => {
     e.preventDefault();
 
     if (!newParcel.roll_number.trim()) {
-      alert('Please enter student roll number');
+      openAlertModal('Validation', 'Please enter student roll number.');
       return;
     }
 
     if (!newParcel.courier_name.trim()) {
-      alert('Please enter courier name');
+      openAlertModal('Validation', 'Please enter courier name.');
       return;
     }
 
@@ -157,16 +182,19 @@ const SecurityParcels = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert(`Parcel added successfully!\nStudent: ${data.parcel.student_name}\nRoom: ${data.parcel.room_number || 'N/A'}`);
+        openAlertModal(
+          'Parcel Added Successfully',
+          `Student: ${data.parcel.student_name}\nRoom: ${data.parcel.room_number || 'N/A'}`
+        );
         setNewParcel(buildDefaultParcel());
         setShowAddForm(false);
         await fetchParcels();
       } else {
-        alert(`Error: ${data.message}`);
+        openAlertModal('Error', data.message || 'Failed to add parcel.');
       }
     } catch (error) {
       console.error('Error adding parcel:', error);
-      alert('Error adding parcel. Please try again.');
+      openAlertModal('Error', 'Error adding parcel. Please try again.');
     } finally {
       setAddingParcel(false);
     }
@@ -369,6 +397,7 @@ const SecurityParcels = () => {
                   <tr>
                     <th>Parcel ID</th>
                     <th>Student</th>
+                    <th>Block</th>
                     <th>Room</th>
                     <th>Courier</th>
                     <th>Received Time</th>
@@ -384,7 +413,8 @@ const SecurityParcels = () => {
                         <div className="student-name">{parcel.student_name}</div>
                         <div className="student-id">{parcel.roll_number}</div>
                       </td>
-                      <td>{parcel.room_number || '—'}</td>
+                      <td>{parcel.display_block || parcel.block_name || parcel.preferred_block || 'Not Assigned'}</td>
+                      <td>{parcel.display_room || parcel.room_number || 'Pending Assignment'}</td>
                       <td>{parcel.courier || 'Not specified'}</td>
                       <td>{parcel.received_date ? new Date(parcel.received_date).toLocaleString() : parcel.received_at || '—'}</td>
                       <td>
@@ -448,8 +478,13 @@ const SecurityParcels = () => {
                   <div className="detail-sub">{selectedParcel.roll_number}</div>
                 </div>
                 <div>
+                  <div className="detail-label">Block</div>
+                  <div className="detail-value">{selectedParcel.display_block || selectedParcel.block_name || selectedParcel.preferred_block || 'Not Assigned'}</div>
+                  <div className="detail-sub">Preferred block shown when not allocated</div>
+                </div>
+                <div>
                   <div className="detail-label">Room</div>
-                  <div className="detail-value">{selectedParcel.room_number || '—'}</div>
+                  <div className="detail-value">{selectedParcel.display_room || selectedParcel.room_number || 'Pending Assignment'}</div>
                   <div className="detail-sub">ID: {selectedParcel.id}</div>
                 </div>
                 <div>
@@ -499,6 +534,23 @@ const SecurityParcels = () => {
                 </button>
               )}
               <button className="btn-secondary" onClick={closeDetails}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {alertModal.open && (
+        <div className="modal-overlay" onClick={closeAlertModal}>
+          <div className="modal-content" style={{ maxWidth: '480px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{alertModal.title}</h2>
+              <button className="modal-close" onClick={closeAlertModal}>×</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: 0, whiteSpace: 'pre-line', lineHeight: 1.6 }}>{alertModal.message}</p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-primary" onClick={closeAlertModal}>OK</button>
             </div>
           </div>
         </div>

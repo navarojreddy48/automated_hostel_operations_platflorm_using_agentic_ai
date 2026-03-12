@@ -18,7 +18,6 @@ const Parcels = () => {
     
     setStudentName(user.name || 'Student');
     fetchStudentParcels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.userId, navigate]);
 
   const fetchStudentParcels = async () => {
@@ -66,24 +65,16 @@ const Parcels = () => {
     <>
           <main className="student-main">
           <header className="parcels-header">
-            <div>
+            <div className="parcels-header-text">
               <h1 className="parcels-title">My Parcels</h1>
               <p className="parcels-subtitle">
                 Showing parcels for {studentName}. Collect from the Security Desk.
               </p>
             </div>
             <button 
+              className="parcels-refresh-btn"
               onClick={fetchStudentParcels}
               disabled={loading}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: '#3b82f6',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.6 : 1
-              }}
             >
               {loading ? 'Refreshing...' : '🔄 Refresh'}
             </button>

@@ -194,6 +194,11 @@
   border-radius: 50%;
   border: none;
 }
+.calendar-day.completed {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #3b82f6;
+}
 
 .calendar-day.pending {
   background-color: #f59e0b;
@@ -223,6 +228,9 @@
 
 .approved-indicator.approved {
   background-color: #0f766e;
+}
+.approved-indicator.completed {
+  background: #2563eb;
 }
 
 .approved-indicator.pending {
@@ -255,6 +263,9 @@
 .approved-legend {
   background-color: #17bfb8;
   border: none;
+}
+.completed-legend {
+  background: #3b82f6;
 }
 
 .pending-legend {

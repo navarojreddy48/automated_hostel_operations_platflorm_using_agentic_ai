@@ -12,6 +12,8 @@ const WardenComplaints = () => {
   const [complaints, setComplaints] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [assigningId, setAssigningId] = useState(null);
+  const [resolvingId, setResolvingId] = useState(null);
 
   useEffect(() => {
     fetchComplaints();
@@ -244,7 +246,7 @@ const WardenComplaints = () => {
                   <div>
                     <div className="student-name">{complaint.student_name || 'N/A'}</div>
                     <div className="student-details">
-                      Room {complaint.room_number || 'N/A'}{complaint.block_name ? ` (${complaint.block_name})` : ''} • {complaint.roll_number || 'N/A'}
+                      Room {complaint.room_number || 'N/A'}{complaint.block_name ? ` (${complaint.block_name})` : ''} - {complaint.roll_number || 'N/A'}
                     </div>
                   </div>
                 </div>
@@ -506,8 +508,10 @@ const formatDate = (dateString) => {
   if (!dateString) return 'N/A';
   const date = new Date(dateString);
   const options = { month: 'short', day: 'numeric', year: 'numeric' };
-  return date.toLocaleDateString('en-US', options);
+  return date.toLocaleDateString('en-GB', options);
 };
 
 export default WardenComplaints;
+
+
 

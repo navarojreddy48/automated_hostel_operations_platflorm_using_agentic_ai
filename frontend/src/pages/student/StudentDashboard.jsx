@@ -18,6 +18,31 @@ const StudentDashboard = () => {
     const normalizedStatus = String(status || '').toLowerCase();
     return normalizedStatus === 'collected' ? 'collected' : 'pending';
   };
+
+  const parseActivityTime = (value) => {
+    if (!value) return null;
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+
+    if (typeof value === 'number') {
+      const d = new Date(value);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    const raw = String(value).trim();
+    if (!raw) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [y, m, d] = raw.split('-').map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+
+    const normalized = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}(:\d{2})?$/.test(raw)
+      ? raw.replace(' ', 'T')
+      : raw;
+
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
   
   useEffect(() => {
     const fetchStudentData = async () => {
@@ -25,12 +50,14 @@ const StudentDashboard = () => {
         if (!currentUser?.userId) return;
         
         setLoading(true);
+        let currentStudentId = null;
         
         // Fetch student profile
         const profileRes = await fetch(`http://localhost:5000/api/student/profile/${currentUser.userId}`);
         const profileData = await profileRes.json();
         if (profileData.success && profileData.data) {
           setStudentProfile(profileData.data);
+          currentStudentId = profileData.data.id;
           setRoomNumber(profileData.data.room_number || '—');
           setHostelBlock(profileData.data.block_name || '—');
         }
@@ -47,9 +74,16 @@ const StudentDashboard = () => {
         const complaintRes = await fetch(`http://localhost:5000/api/student/complaints/${currentUser.userId}`);
         const complaintData = await complaintRes.json();
         if (complaintData.success && Array.isArray(complaintData.data)) {
-          const openCount = complaintData.data.filter(c => c.status !== 'resolved').length;
+          const ownComplaints = currentStudentId
+            ? complaintData.data.filter((c) => String(c.student_id) === String(currentStudentId))
+            : complaintData.data;
+          const openCount = ownComplaints.filter(c => c.status !== 'resolved').length;
           setOpenComplaints(openCount);
         }
+
+        // Fetch leaves
+        const leaveRes = await fetch(`http://localhost:5000/api/student/leaves/${currentUser.userId}`);
+        const leaveData = await leaveRes.json();
         
         // Fetch parcels
         const parcelRes = await fetch(`http://localhost:5000/api/student/parcels/${currentUser.userId}`);
@@ -68,23 +102,27 @@ const StudentDashboard = () => {
             let icon = '🛂';
             let title = '';
             let desc = `Outpass to ${outpass.destination}`;
+            let eventTime = outpass.created_at || outpass.updated_at;
             
-            if (outpass.status === 'approved') {
+            if (['approved', 'approved_otp', 'exited', 'returned'].includes(outpass.status)) {
               icon = '✅';
               title = 'Outpass Approved';
+              eventTime = outpass.approved_at || outpass.updated_at || outpass.created_at;
             } else if (outpass.status === 'rejected') {
               icon = '❌';
               title = 'Outpass Rejected';
+              eventTime = outpass.approved_at || outpass.updated_at || outpass.created_at;
             } else {
               icon = '⏳';
               title = 'Outpass Requested';
+              eventTime = outpass.created_at || outpass.updated_at;
             }
             
             activities.push({
               id: `outpass-${outpass.id}`,
               title,
               desc,
-              time: outpass.updated_at || outpass.created_at,
+              time: eventTime,
               icon
             });
           });
@@ -92,26 +130,65 @@ const StudentDashboard = () => {
         
         // Add complaint activities
         if (complaintData.success && Array.isArray(complaintData.data)) {
-          complaintData.data.slice(0, 3).forEach(complaint => {
+          const ownComplaints = currentStudentId
+            ? complaintData.data.filter((c) => String(c.student_id) === String(currentStudentId))
+            : complaintData.data;
+
+          ownComplaints.slice(0, 3).forEach(complaint => {
             let icon = '⚠️';
             let title = '';
+            let eventTime = complaint.created_at || complaint.updated_at;
             
             if (complaint.status === 'resolved') {
               icon = '✅';
               title = 'Complaint Resolved';
+              eventTime = complaint.resolved_at || complaint.updated_at || complaint.created_at;
             } else if (complaint.status === 'in_progress') {
               icon = '🔧';
               title = 'Complaint In Progress';
+              eventTime = complaint.updated_at || complaint.created_at;
             } else {
               icon = '⚠️';
               title = 'Complaint Raised';
+              eventTime = complaint.created_at || complaint.updated_at;
             }
             
             activities.push({
               id: `complaint-${complaint.id}`,
               title,
               desc: complaint.description || complaint.issue_type,
-              time: complaint.updated_at || complaint.created_at,
+              time: eventTime,
+              icon
+            });
+          });
+        }
+
+        // Add leave activities
+        if (leaveData.success && Array.isArray(leaveData.data)) {
+          leaveData.data.slice(0, 3).forEach(leave => {
+            let icon = '📝';
+            let title = '';
+            let eventTime = leave.created_at || leave.updated_at || leave.from_date;
+
+            if (leave.status === 'approved' || leave.status === 'active' || leave.status === 'completed') {
+              icon = '✅';
+              title = 'Leave Approved';
+              eventTime = leave.approved_at || leave.active_at || leave.completed_at || leave.updated_at || leave.created_at || leave.from_date;
+            } else if (leave.status === 'rejected' || leave.status === 'cancelled' || leave.status === 'expired') {
+              icon = '❌';
+              title = 'Leave Rejected';
+              eventTime = leave.approved_at || leave.expired_at || leave.updated_at || leave.created_at || leave.from_date;
+            } else {
+              icon = '⏳';
+              title = 'Leave Requested';
+              eventTime = leave.created_at || leave.updated_at || leave.from_date;
+            }
+
+            activities.push({
+              id: `leave-${leave.id}`,
+              title,
+              desc: leave.leave_reason || `${leave.leave_type || 'Leave'} request`,
+              time: eventTime,
               icon
             });
           });
@@ -123,20 +200,23 @@ const StudentDashboard = () => {
             const parcelStatus = normalizeParcelStatus(parcel.status);
             let icon = '📦';
             let title = '';
+            let eventTime = parcel.received_at || parcel.received_date;
             
             if (parcelStatus === 'collected') {
               icon = '✅';
               title = 'Parcel Collected';
+              eventTime = parcel.collected_at || parcel.received_at || parcel.received_date;
             } else {
               icon = '📦';
               title = 'Parcel Arrived';
+              eventTime = parcel.received_at || parcel.received_date;
             }
             
             activities.push({
               id: `parcel-${parcel.id}`,
               title,
               desc: parcel.sender_name ? `From ${parcel.sender_name}` : 'Parcel received',
-              time: parcel.collected_at || parcel.received_date,
+              time: eventTime,
               icon
             });
           });
@@ -144,9 +224,11 @@ const StudentDashboard = () => {
         
         // Sort by time (most recent first) and take top 5
         activities.sort((a, b) => {
-          const timeA = new Date(a.time || 0);
-          const timeB = new Date(b.time || 0);
-          return timeB - timeA;
+          const timeA = parseActivityTime(a.time);
+          const timeB = parseActivityTime(b.time);
+          const valueA = timeA ? timeA.getTime() : 0;
+          const valueB = timeB ? timeB.getTime() : 0;
+          return valueB - valueA;
         });
         
         setRecentActivities(activities.slice(0, 5));
@@ -167,8 +249,10 @@ const StudentDashboard = () => {
     if (!timestamp) return 'Recently';
     
     const now = new Date();
-    const activityTime = new Date(timestamp);
+    const activityTime = parseActivityTime(timestamp);
+    if (!activityTime) return 'Recently';
     const diffMs = now - activityTime;
+    if (diffMs < 0) return activityTime.toLocaleDateString('en-GB');
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
@@ -178,7 +262,7 @@ const StudentDashboard = () => {
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? 's' : ''} ago`;
-    return activityTime.toLocaleDateString();
+    return activityTime.toLocaleDateString('en-GB');
   };
 
   return (
@@ -336,4 +420,5 @@ const StudentDashboard = () => {
 };
 
 export default StudentDashboard;
+
 

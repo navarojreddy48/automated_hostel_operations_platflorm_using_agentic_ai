@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../../styles/admin-dashboard.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const DASHBOARD_REFRESH_INTERVAL_MS = 15000;
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState({
@@ -13,19 +16,40 @@ const AdminDashboard = () => {
     totalRooms: 0,
     occupiedRooms: 0,
   });
+  const [recentActivities, setRecentActivities] = useState([]);
+  const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
 
   // Fetch dashboard metrics
   useEffect(() => {
-    const fetchMetrics = async () => {
+    let isMounted = true;
+
+    const fetchMetrics = async (showInitialLoader = false) => {
+      if (showInitialLoader) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
+
       try {
-        // Fetch dashboard stats
-        const dashboardRes = await fetch('http://localhost:5000/api/admin/dashboard');
+        const controller = new AbortController();
+        const [dashboardRes, usersRes, activitiesRes, pendingRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/admin/dashboard`, { signal: controller.signal }),
+          fetch(`${API_BASE_URL}/api/admin/users`, { signal: controller.signal }),
+          fetch(`${API_BASE_URL}/api/admin/dashboard/recent-activities`, { signal: controller.signal }),
+          fetch(`${API_BASE_URL}/api/admin/dashboard/pending-approvals`, { signal: controller.signal })
+        ]);
+
         const dashboardData = await dashboardRes.json();
-        
-        // Fetch all users to count by role
-        const usersRes = await fetch('http://localhost:5000/api/admin/users');
         const usersData = await usersRes.json();
+        const activitiesData = await activitiesRes.json();
+        const pendingData = await pendingRes.json();
+
+        if (!isMounted) {
+          return;
+        }
         
         let totalStudents = 0;
         let totalWardens = 0;
@@ -50,33 +74,52 @@ const AdminDashboard = () => {
             occupiedRooms: dashboardData.data.occupied_rooms || 0,
           });
         }
-        
-        setLoading(false);
+
+        if (activitiesData.success && Array.isArray(activitiesData.data)) {
+          setRecentActivities(activitiesData.data);
+        } else {
+          setRecentActivities([]);
+        }
+
+        if (pendingData.success && Array.isArray(pendingData.data)) {
+          setPendingApprovals(pendingData.data);
+        } else {
+          setPendingApprovals([]);
+        }
+
+        setLastUpdated(new Date());
       } catch (error) {
         console.error('Error fetching metrics:', error);
-        setLoading(false);
+        if (!isMounted) {
+          return;
+        }
+        setRecentActivities([]);
+        setPendingApprovals([]);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          setIsRefreshing(false);
+        }
       }
     };
-    
-    fetchMetrics();
+
+    fetchMetrics(true);
+    const intervalId = setInterval(() => {
+      fetchMetrics(false);
+    }, DASHBOARD_REFRESH_INTERVAL_MS);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, []);
   
-  // Dummy data for recent activities
-  const recentActivities = [
-    { id: 1, type: 'complaint', action: 'New complaint from Rahul Kumar', room: '204-A', time: '2 mins ago', status: 'pending' },
-    { id: 2, type: 'registration', action: 'Student registration approved', name: 'Priya Singh', time: '15 mins ago', status: 'approved' },
-    { id: 3, type: 'leave', action: 'Leave request submitted', name: 'Amit Patel', duration: '3 days', time: '45 mins ago', status: 'pending' },
-    { id: 4, type: 'outpass', action: 'Outpass granted', name: 'Vishnu Sharma', time: '1 hour ago', status: 'approved' },
-    { id: 5, type: 'complaint', action: 'Complaint resolved', room: '105-B', time: '2 hours ago', status: 'resolved' },
-  ];
-
-  // Dummy data for pending approvals
-  const pendingApprovals = [
-    { id: 1, type: 'Registration', name: 'Sneha Gupta', date: '2026-02-08', priority: 'high' },
-    { id: 2, type: 'Leave Request', name: 'Arjun Verma', date: '2026-02-07', priority: 'medium' },
-    { id: 3, type: 'Complaint', description: 'Water leakage in room 301', date: '2026-02-08', priority: 'critical' },
-    { id: 4, type: 'Room Change', name: 'Nikita Das', date: '2026-02-06', priority: 'low' },
-  ];
+  const formatDate = (dateValue) => {
+    if (!dateValue) return 'N/A';
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return String(dateValue);
+    return date.toLocaleDateString('en-GB');
+  };
 
   // System status with real data
   const systemStatus = [
@@ -115,7 +158,14 @@ const AdminDashboard = () => {
           <h1 className="admin-welcome">Admin Dashboard</h1>
           <p className="admin-sub">System administration, monitoring and user management</p>
         </div>
-        {loading && <div style={{ fontSize: '14px', color: '#6b7280' }}>Loading...</div>}
+        <div style={{ fontSize: '14px', color: '#6b7280', textAlign: 'right' }}>
+          {loading ? 'Loading...' : (isRefreshing ? 'Refreshing...' : 'Live data')}
+          {lastUpdated && (
+            <div style={{ fontSize: '12px', marginTop: '2px' }}>
+              Last updated: {lastUpdated.toLocaleTimeString('en-GB')}
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Key Metrics Section */}
@@ -222,6 +272,13 @@ const AdminDashboard = () => {
             <span className="header-badge">{recentActivities.length} actions</span>
           </div>
           <div className="activity-list">
+            {recentActivities.length === 0 && (
+              <div className="activity-item">
+                <div className="activity-details">
+                  <div className="activity-action">No recent activities available</div>
+                </div>
+              </div>
+            )}
             {recentActivities.map((activity) => (
               <div key={activity.id} className="activity-item">
                 <div className="activity-icon">
@@ -248,12 +305,19 @@ const AdminDashboard = () => {
             <span className="header-badge critical">{pendingApprovals.length} pending</span>
           </div>
           <div className="pending-list">
+            {pendingApprovals.length === 0 && (
+              <div className="pending-item">
+                <div className="pending-info">
+                  <div className="pending-name">No pending approvals</div>
+                </div>
+              </div>
+            )}
             {pendingApprovals.map((approval) => (
               <div key={approval.id} className="pending-item">
                 <div className="pending-type">{approval.type}</div>
                 <div className="pending-info">
                   <div className="pending-name">{approval.name || approval.description}</div>
-                  <div className="pending-date">{approval.date}</div>
+                  <div className="pending-date">{formatDate(approval.date)}</div>
                 </div>
                 <span className={`pending-priority ${getStatusBadgeClass(approval.priority)}`}>
                   {approval.priority}

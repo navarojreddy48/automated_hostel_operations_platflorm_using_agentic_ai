@@ -55,14 +55,14 @@ const WardenDashboard = () => {
           setSecuritySummary(securityData.data.status_summary || {});
         }
         
-        // Fetch admin dashboard stats for summary
-        const dashRes = await fetch('http://localhost:5000/api/admin/dashboard');
+        // Fetch warden dashboard stats for summary
+        const dashRes = await fetch('http://localhost:5000/api/warden/dashboard');
         const dashData = await dashRes.json();
         if (dashData.success && dashData.data) {
-          setOccupancyPercentage(dashData.data.occupied_rooms > 0 ? Math.round((dashData.data.occupied_rooms / dashData.data.total_rooms) * 100) : 0);
-          setTotalStudents(dashData.data.active_students || 0);
+          setOccupancyPercentage(dashData.data.total_rooms > 0 ? Math.round((dashData.data.occupied_rooms / dashData.data.total_rooms) * 100) : 0);
+          setTotalStudents(dashData.data.total_students || 0);
           setTotalRooms(dashData.data.total_rooms || 0);
-          setLeaveRequests(dashData.data.pending_registrations || 0);
+          setLeaveRequests(dashData.data.pending_leaves || 0);
           setActiveComplaints(dashData.data.active_complaints || 0);
         }
         
@@ -122,7 +122,7 @@ const WardenDashboard = () => {
             <div className="monitor-title">Security Alerts</div>
             <div className="monitor-value">{securitySummary.high_priority_alerts || 0}</div>
             <div className="monitor-sub">
-              {securitySummary.missing_students || 0} missing · {securitySummary.high_risk_students || 0} high-risk
+              {securitySummary.missing_students || 0} missing - {securitySummary.high_risk_students || 0} high-risk
             </div>
           </div>
           <div className="monitor-icon">🛡️</div>
@@ -154,7 +154,7 @@ const WardenDashboard = () => {
                   <div className="activity-icon">{activity.icon}</div>
                   <div className="activity-content">
                     <div className="activity-action">{activity.action}</div>
-                    <div className="activity-meta">{activity.student} • {activity.time}</div>
+                    <div className="activity-meta">{activity.student} - {activity.time}</div>
                   </div>
                 </div>
               ))
@@ -284,7 +284,7 @@ const WardenDashboard = () => {
                       <div>
                         <div style={{ fontWeight: '600' }}>{op.destination}</div>
                         <div style={{ fontSize: '14px', color: '#6b7280' }}>
-                          {op.student_name || 'Student'} • {op.departure_date && new Date(op.departure_date).toLocaleDateString()}
+                          {op.student_name || 'Student'} - {op.departure_date && new Date(op.departure_date).toLocaleDateString('en-GB')}
                         </div>
                       </div>
                       <span style={{ padding: '0.5rem 0.75rem', borderRadius: '20px', fontSize: '12px', backgroundColor: '#fef3c7', color: '#92400e' }}>
@@ -309,4 +309,6 @@ const WardenDashboard = () => {
 };
 
 export default WardenDashboard;
+
+
 

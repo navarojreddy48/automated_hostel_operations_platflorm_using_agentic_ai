@@ -119,9 +119,9 @@ const Technicians = () => {
     setSubmitting(true);
 
     try {
-      const url = modalMode === 'add' 
-        ? '/api/warden/technicians'
-        : `/api/warden/technicians/${selectedTech.id}`;
+      const url = modalMode === 'add'
+        ? 'http://localhost:5000/api/warden/technicians'
+        : `http://localhost:5000/api/warden/technicians/${selectedTech.id}`;
       
       const method = modalMode === 'add' ? 'POST' : 'PUT';
       
@@ -142,13 +142,19 @@ const Technicians = () => {
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`HTTP ${response.status}: Invalid server response`);
+      }
 
-      if (data.success) {
+      if (response.ok && data?.success) {
         await fetchTechnicians();
         closeModal();
       } else {
-        setFormError(data.message || 'Operation failed');
+        setFormError(data?.message || `Operation failed (HTTP ${response.status})`);
       }
     } catch (error) {
       setFormError('Request failed: ' + error.message);
@@ -243,7 +249,7 @@ const Technicians = () => {
           <p className="page-subtitle">Manage hostel maintenance staff</p>
         </div>
         <button className="add-btn" onClick={openAddModal}>
-          âž• Add Technician
+          Add Technician
         </button>
       </div>
 
@@ -361,7 +367,7 @@ const Technicians = () => {
           <div className="empty-icon">🔧</div>
           <h3>No technicians found</h3>
           <p>{searchTerm || roleFilter !== 'All' ? 'No technicians match your search or filter.' : 'No technicians available. Add one to get started.'}</p>
-          <button className="add-btn" onClick={openAddModal}>âž• Add First Technician</button>
+          <button className="add-btn" onClick={openAddModal}>Add First Technician</button>
         </div>
       )}
 
@@ -518,4 +524,6 @@ const Technicians = () => {
 };
 
 export default Technicians;
+
+
 

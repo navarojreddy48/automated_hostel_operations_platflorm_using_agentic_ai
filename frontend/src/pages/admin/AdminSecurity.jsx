@@ -351,7 +351,7 @@ const AdminSecurity = () => {
           <p className="page-subtitle">Manage hostel security personnel</p>
         </div>
         <button className="btn-primary btn-add" onClick={handleAddStaff}>
-          âž• Add Security Staff
+          Add Security Staff
         </button>
       </div>
 
@@ -657,7 +657,7 @@ const AdminSecurity = () => {
                 <div className="detail-row">
                   <span className="detail-label">Joining Date</span>
                   <span className="detail-value">
-                    {new Date(selectedStaff.joiningDate).toLocaleDateString('en-US', {
+                    {new Date(selectedStaff.joiningDate).toLocaleDateString('en-GB', {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric'
@@ -767,4 +767,7 @@ const AdminSecurity = () => {
 };
 
 export default AdminSecurity;
+
+
+
 

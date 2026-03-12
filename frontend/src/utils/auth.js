@@ -11,6 +11,26 @@ const api = axios.create({
   }
 });
 
+const readStoredUser = () => {
+  try {
+    const raw = localStorage.getItem('hostelUser');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+api.interceptors.request.use((config) => {
+  const user = readStoredUser();
+  if (user?.userId) {
+    config.headers['X-User-Id'] = String(user.userId);
+  }
+  if (user?.role) {
+    config.headers['X-User-Role'] = String(user.role);
+  }
+  return config;
+});
+
 // ===================================
 // Authentication Functions
 // ===================================
@@ -24,25 +44,41 @@ const api = axios.create({
 export const login = async (email, password, userType = 'student') => {
   try {
     const response = await api.post('/login', { email, password, userType });
-    
-    if (response.data.success) {
+
+    const payload = response.data || {};
+    const loginData = payload.data || payload;
+
+    if (payload.success) {
       // Store user data in localStorage with correct format
       const userData = {
-        userId: response.data.userId,
-        name: response.data.name,
-        role: response.data.role,
-        staffId: response.data.staffId || null,
-        rollNumber: response.data.rollNumber || null
+        userId: loginData.userId,
+        name: loginData.name,
+        role: loginData.role,
+        staffId: loginData.staffId || null,
+        rollNumber: loginData.rollNumber || null
       };
       localStorage.setItem('hostelUser', JSON.stringify(userData));
       localStorage.setItem('isAuthenticated', 'true');
-      return response.data;
+      return {
+        success: true,
+        ...loginData,
+        message: payload.message
+      };
     }
-    return response.data;
+    return {
+      success: false,
+      message: payload.message || payload.error?.message || 'Login failed',
+      error: payload.error || null
+    };
   } catch (error) {
     if (error.response) {
       // Server responded with error
-      return error.response.data;
+      const payload = error.response.data || {};
+      return {
+        success: false,
+        message: payload.message || payload.error?.message || 'Login failed',
+        error: payload.error || null
+      };
     } else if (error.request) {
       // No response from server
       return {

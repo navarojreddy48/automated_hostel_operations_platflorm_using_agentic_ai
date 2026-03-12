@@ -177,7 +177,7 @@ const TechnicianTaskHistory = () => {
                 <div className="info-cell">
                   <label>Date Assigned</label>
                   <div className="info-content">
-                    {task.created_at ? new Date(task.created_at).toLocaleDateString() : 'N/A'}
+                    {task.created_at ? new Date(task.created_at).toLocaleDateString('en-GB') : 'N/A'}
                   </div>
                 </div>
               </div>
@@ -211,4 +211,5 @@ const TechnicianTaskHistory = () => {
 };
 
 export default TechnicianTaskHistory;
+
 

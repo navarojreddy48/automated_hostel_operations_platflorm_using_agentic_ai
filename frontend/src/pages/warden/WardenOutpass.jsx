@@ -300,7 +300,7 @@ const WardenOutpass = () => {
                 <div className="leave-card-top">
                   <div>
                     <div className="leave-name">{req.student_name || 'N/A'}</div>
-                    <div className="leave-meta">{req.roll_number || 'N/A'} · Room {req.room_number || 'N/A'}</div>
+                    <div className="leave-meta">{req.roll_number || 'N/A'} - Room {req.room_number || 'N/A'}</div>
                   </div>
                   <div className="leave-tags">
                     <span className={`tag ${req.status === 'pending_otp' ? 'pending' : req.status === 'approved_otp' ? 'approved' : req.status}`}>
@@ -330,10 +330,10 @@ const WardenOutpass = () => {
                     <div className="leave-label" style={{ color: '#991b1b' }}>🚨 Alert Generated</div>
                     <div className="leave-value" style={{ color: '#7f1d1d' }}>
                       {req.alert_to_student && '✅ Student email sent'}
-                      {req.alert_to_student && req.alert_to_parent && ' · '}
+                      {req.alert_to_student && req.alert_to_parent && ' - '}
                       {req.alert_to_parent && '✅ Parent email sent'}
-                      {req.alert_sent_at && ` · Alert time: ${new Date(req.alert_sent_at).toLocaleString()}`}
-                      {req.late_minutes && ` · Delay: ${formatLateDuration(req.late_minutes)}`}
+                      {req.alert_sent_at && ` - Alert time: ${new Date(req.alert_sent_at).toLocaleString()}`}
+                      {req.late_minutes && ` - Delay: ${formatLateDuration(req.late_minutes)}`}
                     </div>
                   </div>
                 )}
@@ -342,8 +342,8 @@ const WardenOutpass = () => {
                   <div className="leave-reason" style={{ background: '#fff7ed', borderColor: '#fdba74' }}>
                     <div className="leave-label" style={{ color: '#b45309' }}>⚠ Previous overdue return detected</div>
                     <div className="leave-value" style={{ color: '#9a3412' }}>
-                      {req.warning_message} · Overdue count: {req.previous_overdue_count || 0}
-                      {req.last_overdue_at ? ` · Last overdue: ${new Date(req.last_overdue_at).toLocaleDateString()}` : ''}
+                      {req.warning_message} - Overdue count: {req.previous_overdue_count || 0}
+                      {req.last_overdue_at ? ` - Last overdue: ${new Date(req.last_overdue_at).toLocaleDateString('en-GB')}` : ''}
                     </div>
                   </div>
                 )}
@@ -373,7 +373,7 @@ const WardenOutpass = () => {
                   </div>
                   <div>
                     <div className="leave-label">Request Date</div>
-                    <div className="leave-value">{req.created_at ? new Date(req.created_at).toLocaleDateString() : 'N/A'}</div>
+                    <div className="leave-value">{req.created_at ? new Date(req.created_at).toLocaleDateString('en-GB') : 'N/A'}</div>
                   </div>
                 </div>
 
@@ -482,4 +482,6 @@ const WardenOutpass = () => {
 };
 
 export default WardenOutpass;
+
+
 

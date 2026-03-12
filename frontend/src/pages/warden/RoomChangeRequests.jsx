@@ -122,7 +122,7 @@ const RoomChangeRequests = () => {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const date = new Date(dateStr);
-    return date.toLocaleDateString('en-IN');
+    return date.toLocaleDateString('en-GB');
   };
 
   // Available beds calculation
@@ -262,7 +262,7 @@ const RoomChangeRequests = () => {
             <div className="modal-header">
               <div>
                 <h2>Room Change Request Details</h2>
-                <p className="modal-subtitle">{selectedRequest.student_name} • {selectedRequest.roll_number}</p>
+                <p className="modal-subtitle">{selectedRequest.student_name} - {selectedRequest.roll_number}</p>
               </div>
               <button className="modal-close" onClick={() => setSelectedRequest(null)}>×</button>
             </div>
@@ -396,4 +396,6 @@ const RoomChangeRequests = () => {
 };
 
 export default RoomChangeRequests;
+
+
 

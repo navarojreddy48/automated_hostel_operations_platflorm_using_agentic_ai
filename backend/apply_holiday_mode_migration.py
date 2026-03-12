@@ -1,6 +1,8 @@
 """
-Apply Holiday Mode and OTP Migration
-Run this script to add holiday mode and OTP support to the database
+Holiday mode migration helper.
+
+The holiday mode/OTP schema is now consolidated into database_schema.sql.
+This script verifies that required columns/tables exist.
 """
 
 import mysql.connector
@@ -16,66 +18,42 @@ DB_CONFIG = {
 }
 
 def apply_migration():
-    """Apply the holiday mode migration SQL"""
+    """Verify holiday mode schema objects exist."""
     try:
         print("Connecting to database...")
         connection = mysql.connector.connect(**DB_CONFIG)
-        cursor = connection.cursor()
-        
-        # Read migration file
-        migration_file = os.path.join(
-            os.path.dirname(__file__), 
-            'migrations', 
-            '2026_02_18_add_holiday_mode_otp.sql'
-        )
-        
-        print(f"Reading migration file: {migration_file}")
-        with open(migration_file, 'r', encoding='utf-8') as f:
-            sql_content = f.read()
-        
-        # Split by semicolon and execute each statement
-        statements = [s.strip() for s in sql_content.split(';') if s.strip() and not s.strip().startswith('--')]
-        
-        print(f"\nExecuting {len(statements)} SQL statements...")
-        for i, statement in enumerate(statements, 1):
-            try:
-                # Skip comments
-                if statement.strip().startswith('--'):
-                    continue
-                    
-                print(f"\n[{i}/{len(statements)}] Executing...")
-                cursor.execute(statement)
-                connection.commit()
-                print(f"✓ Success")
-            except mysql.connector.Error as e:
-                # Ignore duplicate column errors (migration already applied)
-                if 'Duplicate column name' in str(e) or 'Duplicate key name' in str(e):
-                    print(f"⚠ Skipped (already exists)")
-                else:
-                    print(f"✗ Error: {e}")
-                    raise
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute("SHOW COLUMNS FROM outpasses")
+        outpass_columns = {row['Field'] for row in cursor.fetchall()}
+
+        required_columns = {
+            'approval_method', 'otp_code', 'otp_sent_at', 'otp_verified_at',
+            'otp_attempts', 'holiday_mode_request'
+        }
+        missing_columns = sorted(required_columns - outpass_columns)
+
+        cursor.execute("SHOW TABLES LIKE 'system_settings'")
+        has_system_settings = cursor.fetchone() is not None
+
+        if missing_columns or not has_system_settings:
+            print("\n❌ Schema verification failed.")
+            if missing_columns:
+                print("Missing outpasses columns:", ", ".join(missing_columns))
+            if not has_system_settings:
+                print("Missing table: system_settings")
+            print("Run setup_database.py to apply consolidated schema.")
+            sys.exit(1)
         
         cursor.close()
         connection.close()
         
         print("\n" + "="*50)
-        print("✅ Migration applied successfully!")
+        print("✅ Holiday mode schema is already present.")
         print("="*50)
-        print("\nNew features enabled:")
-        print("  • College Holiday Mode toggle")
-        print("  • OTP verification for outpasses")
-        print("  • Parent email OTP delivery")
-        print("  • Auto-approval after OTP verification")
-        print("\nYou can now:")
-        print("  1. Enable Holiday Mode from Warden Outpass page")
-        print("  2. Students can choose OTP or Manual approval")
-        print("  3. OTP sent to parent email automatically")
         
     except mysql.connector.Error as e:
         print(f"\n❌ Database error: {e}")
-        sys.exit(1)
-    except FileNotFoundError:
-        print(f"\n❌ Migration file not found: {migration_file}")
         sys.exit(1)
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")

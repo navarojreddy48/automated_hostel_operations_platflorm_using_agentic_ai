@@ -210,7 +210,7 @@ const WardenLeave = () => {
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
     const date = new Date(dateStr);
-    return date.toISOString().split('T')[0];
+    return date.toLocaleDateString('en-GB');
   };
 
   return (
@@ -318,7 +318,7 @@ const WardenLeave = () => {
                 <div className="leave-card-top">
                   <div>
                     <div className="leave-name">{req.student_name || 'N/A'}</div>
-                    <div className="leave-meta">{req.roll_number || 'N/A'} · Room {req.room_number || 'N/A'}</div>
+                    <div className="leave-meta">{req.roll_number || 'N/A'} - Room {req.room_number || 'N/A'}</div>
                   </div>
                   <div className="leave-tags">
                     <span className={`tag ${req.status}`}>{req.status}</span>
@@ -423,7 +423,7 @@ const WardenLeave = () => {
               <div>
                 <h2>Previous Leaves</h2>
                 <p>
-                  {historyModal.name} · {historyModal.roll}
+                  {historyModal.name} - {historyModal.roll}
                   <span className="leave-badge">Last 30 days</span>
                 </p>
               </div>
@@ -471,4 +471,5 @@ const WardenLeave = () => {
 };
 
 export default WardenLeave;
+
 

@@ -178,19 +178,21 @@ const StudentOutpass = () => {
         headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
+      const payload = data?.data || {};
+      const message = data?.message || data?.error?.message;
       
       if (res.status === 429) {
         // Rate limited - OTP already sent recently
-        alert(`⏳ ${data.message}\nOTP has already been sent to parent email.`);
+        alert(`⏳ ${message || 'OTP already sent recently.'}\nOTP has already been sent to parent email.`);
         setOtpSent(prev => ({ ...prev, [outpassId]: true }));
         return;
       }
       
       if (data.success) {
         setOtpSent(prev => ({ ...prev, [outpassId]: true }));
-        alert(`✅ OTP sent successfully to parent email: ${data.parent_email || data.parent_contact}\n\nPlease verify the OTP to complete your outpass request.`);
+        alert(`✅ OTP sent successfully to parent email: ${payload.parent_email || payload.parent_contact || 'N/A'}\n\nPlease verify the OTP to complete your outpass request.`);
       } else {
-        alert(data.message || 'Failed to send OTP');
+        alert(message || 'Failed to send OTP');
       }
     } catch (error) {
       console.error('Error sending OTP:', error);
@@ -211,6 +213,7 @@ const StudentOutpass = () => {
         body: JSON.stringify({ otp: otpInput }),
       });
       const data = await res.json();
+      const message = data?.message || data?.error?.message;
       
       if (data.success) {
         // Refresh outpasses list
@@ -225,7 +228,7 @@ const StudentOutpass = () => {
         setCurrentOutpassForOtp(null);
         alert('✅ OTP Verified! Outpass approved via parent verification.');
       } else {
-        alert(data.message || 'Invalid OTP');
+        alert(message || 'Invalid OTP');
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
@@ -485,7 +488,7 @@ const StudentOutpass = () => {
                     const statusInfo = getStatusBadge(outpass.status);
                     
                     // Format departure date and time (backend uses: out_date and out_time)
-                    const departureDate = outpass.out_date ? new Date(outpass.out_date).toLocaleDateString() : '';
+                    const departureDate = outpass.out_date ? new Date(outpass.out_date).toLocaleDateString('en-GB') : '';
                     const departureTime = outpass.out_time || '';
                     const departureDisplay = departureDate + (departureTime ? ` at ${departureTime}` : '');
                     
@@ -493,7 +496,7 @@ const StudentOutpass = () => {
                     let returnDisplay = '';
                     if (outpass.expected_return_time) {
                       const returnDateTime = new Date(outpass.expected_return_time);
-                      returnDisplay = returnDateTime.toLocaleDateString() + ' at ' + returnDateTime.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+                      returnDisplay = returnDateTime.toLocaleDateString('en-GB') + ' at ' + returnDateTime.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
                     }
                     
                     return (
@@ -598,4 +601,5 @@ const StudentOutpass = () => {
 };
 
 export default StudentOutpass;
+
 

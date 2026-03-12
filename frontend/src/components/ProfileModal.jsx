@@ -107,7 +107,7 @@ const ProfileModal = ({ onClose }) => {
           { label: 'Staff ID', value: profileData.staff_id },
           { label: 'Phone', value: profileData.phone },
           { label: 'Assigned Block', value: profileData.block_name || 'Not Assigned' },
-          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString() : 'N/A' },
+          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString('en-GB') : 'N/A' },
         ];
         break;
 
@@ -118,7 +118,7 @@ const ProfileModal = ({ onClose }) => {
           { label: 'Phone', value: profileData.phone },
           { label: 'Assigned Gate/Area', value: profileData.gate_assigned || 'Not Assigned' },
           { label: 'Shift Timing', value: profileData.shift_timing || 'Not Assigned' },
-          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString() : 'N/A' },
+          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString('en-GB') : 'N/A' },
         ];
         break;
 
@@ -130,14 +130,14 @@ const ProfileModal = ({ onClose }) => {
           { label: 'Specialization', value: profileData.specialization },
           { label: 'Active Complaints', value: profileData.active_complaints || 0 },
           { label: 'Resolved Complaints', value: profileData.resolved_complaints || 0 },
-          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString() : 'N/A' },
+          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString('en-GB') : 'N/A' },
         ];
         break;
 
       case 'admin':
         roleSpecificFields = [
           { label: 'Admin Level', value: 'System Administrator' },
-          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString() : 'N/A' },
+          { label: 'Joined On', value: profileData.created_at ? new Date(profileData.created_at).toLocaleDateString('en-GB') : 'N/A' },
         ];
         break;
     }
@@ -212,4 +212,5 @@ const ProfileModal = ({ onClose }) => {
 };
 
 export default ProfileModal;
+
 

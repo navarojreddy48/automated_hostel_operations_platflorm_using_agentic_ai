@@ -335,7 +335,7 @@ const StudentComplaints = () => {
                     <div className="detail-row">
                       <span className="label">Submitted:</span>
                       <span className="value">
-                        {complaint.created_at && new Date(complaint.created_at).toLocaleDateString()}
+                        {complaint.created_at && new Date(complaint.created_at).toLocaleDateString('en-GB')}
                       </span>
                     </div>
                   </div>
@@ -364,5 +364,6 @@ const StudentComplaints = () => {
 };
 
 export default StudentComplaints;
+
 
 

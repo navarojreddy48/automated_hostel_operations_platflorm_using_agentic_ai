@@ -333,7 +333,7 @@ const AdminWardens = () => {
           <p className="page-subtitle">Manage hostel wardens</p>
         </div>
         <button className="btn-primary btn-add" onClick={handleAddWarden}>
-          âž• Add Warden
+          Add Warden
         </button>
       </div>
 
@@ -419,7 +419,7 @@ const AdminWardens = () => {
                   </td>
                   <td>
                     <span className="date-cell">
-                      {warden.created_at ? new Date(warden.created_at).toLocaleDateString() : 'N/A'}
+                      {warden.created_at ? new Date(warden.created_at).toLocaleDateString('en-GB') : 'N/A'}
                     </span>
                   </td>
                   <td>
@@ -620,7 +620,7 @@ const AdminWardens = () => {
                 <div className="detail-row">
                   <span className="detail-label">Joined On</span>
                   <span className="detail-value">
-                    {selectedWarden.created_at ? new Date(selectedWarden.created_at).toLocaleDateString() : 'N/A'}
+                    {selectedWarden.created_at ? new Date(selectedWarden.created_at).toLocaleDateString('en-GB') : 'N/A'}
                   </span>
                 </div>
               </div>
@@ -747,4 +747,7 @@ const AdminWardens = () => {
 };
 
 export default AdminWardens;
+
+
+
 

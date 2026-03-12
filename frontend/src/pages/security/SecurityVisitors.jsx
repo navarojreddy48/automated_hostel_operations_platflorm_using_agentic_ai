@@ -297,7 +297,7 @@ const SecurityVisitors = () => {
                       >
                         <div style={{fontWeight: 500}}>{student.name}</div>
                         <div style={{fontSize: '12px', color: '#6b7280'}}>
-                          {student.roll_number} • Room {student.room_number || 'N/A'}
+                          {student.roll_number} - Room {student.room_number || 'N/A'}
                         </div>
                       </div>
                     ))}
@@ -492,8 +492,8 @@ const SecurityVisitors = () => {
               </div>
 
               <div className="timeline">
-                <div className="timeline-item active">Entry • {selectedVisitor.entryTime}</div>
-                <div className="timeline-item">Exit • Pending</div>
+                <div className="timeline-item active">Entry - {selectedVisitor.entryTime}</div>
+                <div className="timeline-item">Exit - Pending</div>
               </div>
             </div>
             <div className="modal-footer">
@@ -507,4 +507,5 @@ const SecurityVisitors = () => {
 };
 
 export default SecurityVisitors;
+
 

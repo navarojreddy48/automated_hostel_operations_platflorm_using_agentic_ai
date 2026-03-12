@@ -1,13 +1,17 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, date, time, timedelta
+from functools import wraps
 import os
 import json
+import logging
 import base64
 import smtplib
 import hashlib
+import hmac
+import secrets
 import threading
 import time as time_module
 from email.mime.text import MIMEText
@@ -19,6 +23,11 @@ from googleapiclient.discovery import build
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for React frontend
+
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+if not app.logger.handlers:
+    logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
+app.logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 
 # Email Configuration - Support both SMTP and Gmail API
 USE_SMTP = os.getenv('EMAIL_USE_SMTP', 'true').lower() == 'true'
@@ -92,9 +101,226 @@ SECURITY_RESTRICTED_END_HOUR = int(os.getenv('SECURITY_RESTRICTED_END_HOUR', '6'
 SECURITY_RISK_MEDIUM_THRESHOLD = int(os.getenv('SECURITY_RISK_MEDIUM_THRESHOLD', '35'))
 SECURITY_RISK_HIGH_THRESHOLD = int(os.getenv('SECURITY_RISK_HIGH_THRESHOLD', '70'))
 
+LOGIN_MAX_ATTEMPTS = int(os.getenv('LOGIN_MAX_ATTEMPTS', '5'))
+LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '15'))
+LOGIN_TRACKING_WINDOW_MINUTES = int(os.getenv('LOGIN_TRACKING_WINDOW_MINUTES', '15'))
+LOGIN_ATTEMPT_STATE = {}
+LOGIN_ATTEMPT_LOCK = threading.Lock()
+
+ROLE_ROUTE_PREFIXES = {
+    '/api/admin/': 'admin',
+    '/api/warden/': 'warden',
+    '/api/security/': 'security',
+    '/api/technician/': 'technician'
+}
+
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _cleanup_login_attempts(now):
+    """Drop stale login attempt records from memory."""
+    stale_cutoff = now - timedelta(minutes=LOGIN_TRACKING_WINDOW_MINUTES)
+    stale_keys = [
+        key for key, value in LOGIN_ATTEMPT_STATE.items()
+        if value.get('last_attempt_at', now) < stale_cutoff and value.get('locked_until', now) < now
+    ]
+    for key in stale_keys:
+        LOGIN_ATTEMPT_STATE.pop(key, None)
+
+
+def is_login_locked(identifier):
+    """Return lock status for an identifier."""
+    now = datetime.now()
+    with LOGIN_ATTEMPT_LOCK:
+        _cleanup_login_attempts(now)
+        state = LOGIN_ATTEMPT_STATE.get(identifier)
+        if not state:
+            return False, 0
+        locked_until = state.get('locked_until')
+        if locked_until and locked_until > now:
+            seconds_remaining = int((locked_until - now).total_seconds())
+            return True, seconds_remaining
+        return False, 0
+
+
+def record_failed_login(identifier):
+    """Track a failed login and return remaining attempts before lock."""
+    now = datetime.now()
+    with LOGIN_ATTEMPT_LOCK:
+        _cleanup_login_attempts(now)
+        state = LOGIN_ATTEMPT_STATE.get(identifier)
+        if not state or (now - state.get('first_attempt_at', now)) > timedelta(minutes=LOGIN_TRACKING_WINDOW_MINUTES):
+            state = {
+                'count': 0,
+                'first_attempt_at': now,
+                'last_attempt_at': now,
+                'locked_until': None
+            }
+        state['count'] += 1
+        state['last_attempt_at'] = now
+        if state['count'] >= LOGIN_MAX_ATTEMPTS:
+            state['locked_until'] = now + timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+        LOGIN_ATTEMPT_STATE[identifier] = state
+        remaining = max(0, LOGIN_MAX_ATTEMPTS - state['count'])
+        return remaining
+
+
+def clear_failed_login(identifier):
+    """Clear lockout state for successful login."""
+    with LOGIN_ATTEMPT_LOCK:
+        LOGIN_ATTEMPT_STATE.pop(identifier, None)
+
+
+def generate_otp_code():
+    """Generate a cryptographically secure 6-digit OTP."""
+    return str(secrets.randbelow(900000) + 100000)
+
+
+def hash_otp_code(otp_code):
+    """Return SHA-256 hash for OTP storage and comparison."""
+    return hashlib.sha256(str(otp_code).encode('utf-8')).hexdigest()
+
+
+def log_event(level, event, **fields):
+    """Emit structured JSON logs with consistent envelope."""
+    record = {
+        'event': event,
+        'request_id': getattr(g, 'request_id', None),
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        **fields
+    }
+    app.logger.log(level, json.dumps(record, default=str))
+
+
+def ensure_audit_log_table():
+    """Ensure audit_logs table exists for key security actions."""
+    connection = get_db_connection()
+    if not connection:
+        return
+    cursor = connection.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NULL,
+          actor_identifier VARCHAR(255) NULL,
+          actor_role VARCHAR(50) NULL,
+          action VARCHAR(100) NOT NULL,
+          target_type VARCHAR(100) NULL,
+          target_id VARCHAR(100) NULL,
+          outcome ENUM('success', 'failure') NOT NULL,
+          details TEXT NULL,
+          request_id VARCHAR(64) NULL,
+          ip_address VARCHAR(64) NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_audit_user_id (user_id),
+          INDEX idx_audit_action (action),
+          INDEX idx_audit_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+
+def log_audit_event(action, outcome, user_id=None, actor_identifier=None, actor_role=None, target_type=None, target_id=None, details=None):
+    """Write a compact audit trail row for critical actions."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO audit_logs
+            (user_id, actor_identifier, actor_role, action, target_type, target_id, outcome, details, request_id, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                user_id,
+                actor_identifier,
+                actor_role,
+                action,
+                target_type,
+                str(target_id) if target_id is not None else None,
+                outcome,
+                json.dumps(details or {}, default=str),
+                getattr(g, 'request_id', None),
+                request.remote_addr
+            )
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+    except Exception as audit_error:
+        app.logger.warning(f"Failed to write audit event: {audit_error}")
+
+
+@app.before_request
+def assign_request_id():
+    """Attach a request identifier for response metadata and traceability."""
+    g.request_id = request.headers.get('X-Request-Id') or secrets.token_hex(8)
+    g.request_started_at = datetime.utcnow()
+
+
+@app.after_request
+def append_request_metadata(response):
+    """Attach request metadata and emit per-request structured log."""
+    response.headers['X-Request-Id'] = getattr(g, 'request_id', '')
+    started_at = getattr(g, 'request_started_at', None)
+    duration_ms = None
+    if started_at:
+        duration_ms = round((datetime.utcnow() - started_at).total_seconds() * 1000, 2)
+    log_event(
+        logging.INFO,
+        'http_request',
+        method=request.method,
+        path=request.path,
+        status=response.status_code,
+        duration_ms=duration_ms,
+        remote_addr=request.remote_addr
+    )
+    return response
+
+
+def api_success(data=None, message=None, status_code=200, meta=None):
+    """Build a normalized success response payload."""
+    payload = {
+        'success': True,
+        'data': data if data is not None else {},
+        'error': None,
+        'meta': {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'request_id': getattr(g, 'request_id', None)
+        }
+    }
+    if message:
+        payload['message'] = message
+    if meta:
+        payload['meta'].update(meta)
+    return jsonify(payload), status_code
+
+
+def api_error(code, message, status_code=400, details=None, meta=None):
+    """Build a normalized error response payload."""
+    payload = {
+        'success': False,
+        'data': None,
+        'message': message,
+        'error': {
+            'code': code,
+            'message': message,
+            'details': details or {}
+        },
+        'meta': {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'request_id': getattr(g, 'request_id', None)
+        }
+    }
+    if meta:
+        payload['meta'].update(meta)
+    return jsonify(payload), status_code
 
 # Helper function to serialize database results
 def serialize_result(obj):
@@ -116,6 +342,115 @@ def serialize_row(row):
     if isinstance(row, dict):
         return {k: serialize_result(v) for k, v in row.items()}
     return row
+
+
+def _extract_request_user_id():
+    """Resolve acting user_id from headers, route params, query params, or JSON body."""
+    header_user_id = request.headers.get('X-User-Id')
+    if header_user_id:
+        try:
+            return int(header_user_id)
+        except (TypeError, ValueError):
+            return None
+
+    view_user_id = request.view_args.get('user_id') if request.view_args else None
+    if view_user_id is not None:
+        try:
+            return int(view_user_id)
+        except (TypeError, ValueError):
+            return None
+
+    arg_user_id = request.args.get('user_id') or request.args.get('userId')
+    if arg_user_id:
+        try:
+            return int(arg_user_id)
+        except (TypeError, ValueError):
+            return None
+
+    payload = request.get_json(silent=True) or {}
+    body_user_id = payload.get('user_id') or payload.get('userId')
+    if body_user_id is not None:
+        try:
+            return int(body_user_id)
+        except (TypeError, ValueError):
+            return None
+
+    return None
+
+
+def _load_request_actor():
+    """Load and cache the acting user for authorization checks."""
+    if hasattr(g, 'request_actor'):
+        return g.request_actor
+
+    user_id = _extract_request_user_id()
+    if not user_id:
+        g.request_actor = None
+        return None
+
+    connection = get_db_connection()
+    if not connection:
+        g.request_actor = None
+        return None
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT id, role, status FROM users WHERE id = %s AND status = 'active'",
+        (user_id,)
+    )
+    actor = cursor.fetchone()
+    cursor.close()
+    connection.close()
+
+    declared_role = (request.headers.get('X-User-Role') or '').strip().lower()
+    if actor and declared_role and actor.get('role') != declared_role:
+        g.request_actor = {'invalid': True}
+        return g.request_actor
+
+    g.request_actor = actor
+    return actor
+
+
+def require_role(*allowed_roles):
+    """Route-level RBAC guard based on current acting user."""
+    normalized_roles = {str(role).strip().lower() for role in allowed_roles}
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            actor = _load_request_actor()
+            if actor is None:
+                return jsonify({'success': False, 'message': 'Authentication required'}), 401
+            if actor.get('invalid'):
+                return jsonify({'success': False, 'message': 'Role identity mismatch'}), 403
+            actor_role = (actor.get('role') or '').strip().lower()
+            if actor_role not in normalized_roles:
+                return jsonify({'success': False, 'message': 'Access denied'}), 403
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@app.before_request
+def enforce_prefix_role_access():
+    """Apply role checks for privileged route prefixes."""
+    if request.method == 'OPTIONS':
+        return None
+
+    path = request.path or ''
+    for prefix, required_role in ROLE_ROUTE_PREFIXES.items():
+        if path.startswith(prefix):
+            actor = _load_request_actor()
+            if actor is None:
+                return jsonify({'success': False, 'message': 'Authentication required'}), 401
+            if actor.get('invalid'):
+                return jsonify({'success': False, 'message': 'Role identity mismatch'}), 403
+            if (actor.get('role') or '').strip().lower() != required_role:
+                return jsonify({'success': False, 'message': 'Access denied'}), 403
+            break
+    return None
 
 def generate_staff_id(role, connection):
     """Generate unique staff ID for new staff members"""
@@ -156,6 +491,90 @@ def get_db_connection():
     except mysql.connector.Error as err:
         print(f"Database connection error: {err}")
         return None
+
+
+def _is_benign_migration_error(error_message):
+    """Return True when SQL migration failure is due to an already-applied change."""
+    normalized = (error_message or '').lower()
+    benign_markers = [
+        'duplicate column name',
+        'duplicate key name',
+        'already exists',
+        'exists'
+    ]
+    return any(marker in normalized for marker in benign_markers)
+
+
+def apply_sql_migrations():
+    """Apply pending SQL files in backend/migrations and track them in schema_migrations."""
+    migrations_dir = os.path.join(os.path.dirname(__file__), 'migrations')
+    if not os.path.isdir(migrations_dir):
+        return
+
+    connection = get_db_connection()
+    if not connection:
+        print('Migration runner skipped: database connection unavailable')
+        return
+
+    cursor = connection.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          migration_name VARCHAR(255) NOT NULL UNIQUE,
+          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+    connection.commit()
+
+    cursor.execute("SELECT migration_name FROM schema_migrations")
+    applied_migrations = {row[0] for row in cursor.fetchall()}
+
+    migration_files = sorted(
+        file_name for file_name in os.listdir(migrations_dir)
+        if file_name.endswith('.sql')
+    )
+
+    for file_name in migration_files:
+        if file_name in applied_migrations:
+            continue
+
+        migration_path = os.path.join(migrations_dir, file_name)
+        with open(migration_path, 'r', encoding='utf-8') as migration_file:
+            sql_script = migration_file.read().strip()
+
+        if not sql_script:
+            cursor.execute(
+                "INSERT INTO schema_migrations (migration_name) VALUES (%s)",
+                (file_name,)
+            )
+            connection.commit()
+            continue
+
+        try:
+            for _ in cursor.execute(sql_script, multi=True):
+                pass
+            cursor.execute(
+                "INSERT INTO schema_migrations (migration_name) VALUES (%s)",
+                (file_name,)
+            )
+            connection.commit()
+            print(f"Applied migration: {file_name}")
+        except Exception as migration_error:
+            if _is_benign_migration_error(str(migration_error)):
+                cursor.execute(
+                    "INSERT INTO schema_migrations (migration_name) VALUES (%s)",
+                    (file_name,)
+                )
+                connection.commit()
+                print(f"Marked migration as already applied: {file_name}")
+            else:
+                connection.rollback()
+                cursor.close()
+                connection.close()
+                raise
+
+    cursor.close()
+    connection.close()
 
 
 def ensure_outpass_monitoring_columns():
@@ -212,6 +631,7 @@ def ensure_holiday_mode_columns():
     alter_statements = [
         "ALTER TABLE outpasses ADD COLUMN approval_method ENUM('manual', 'otp') DEFAULT 'manual'",
         "ALTER TABLE outpasses ADD COLUMN otp_code VARCHAR(6)",
+        "ALTER TABLE outpasses MODIFY COLUMN otp_code VARCHAR(64)",
         "ALTER TABLE outpasses ADD COLUMN otp_sent_at DATETIME",
         "ALTER TABLE outpasses ADD COLUMN otp_verified_at DATETIME",
         "ALTER TABLE outpasses ADD COLUMN otp_attempts INT DEFAULT 0",
@@ -2479,18 +2899,37 @@ def login():
 
         # Validate input
         if not identifier or not password:
-            return jsonify({
-                'success': False,
-                'message': 'Email/roll number/staff ID and password are required'
-            }), 400
+            log_audit_event(
+                action='login',
+                outcome='failure',
+                actor_identifier=identifier or None,
+                details={'reason': 'missing_credentials'}
+            )
+            return api_error(
+                'AUTH_MISSING_CREDENTIALS',
+                'Email/roll number/staff ID and password are required',
+                400
+            )
+
+        is_locked, seconds_remaining = is_login_locked(identifier)
+        if is_locked:
+            log_audit_event(
+                action='login',
+                outcome='failure',
+                actor_identifier=identifier,
+                details={'reason': 'lockout', 'retry_after_seconds': seconds_remaining}
+            )
+            return api_error(
+                'AUTH_TOO_MANY_ATTEMPTS',
+                f'Too many failed attempts. Try again in {seconds_remaining} seconds.',
+                429,
+                details={'retry_after_seconds': seconds_remaining}
+            )
 
         # Connect to database
         connection = get_db_connection()
         if not connection:
-            return jsonify({
-                'success': False,
-                'message': 'Database connection failed'
-            }), 500
+            return api_error('DB_CONNECTION_FAILED', 'Database connection failed', 500)
 
         cursor = connection.cursor(dictionary=True)
 
@@ -2508,21 +2947,50 @@ def login():
 
         # Check if user exists
         if not user:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid email or password'
-            }), 401
+            remaining_attempts = record_failed_login(identifier)
+            log_audit_event(
+                action='login',
+                outcome='failure',
+                actor_identifier=identifier,
+                details={'reason': 'invalid_credentials', 'remaining_attempts': remaining_attempts}
+            )
+            return api_error(
+                'AUTH_INVALID_CREDENTIALS',
+                'Invalid email or password',
+                401,
+                details={'remaining_attempts': remaining_attempts}
+            )
 
         # Verify password
         if not check_password_hash(user['password'], password):
-            return jsonify({
-                'success': False,
-                'message': 'Invalid email or password'
-            }), 401
+            remaining_attempts = record_failed_login(identifier)
+            log_audit_event(
+                action='login',
+                outcome='failure',
+                user_id=user.get('id'),
+                actor_identifier=identifier,
+                actor_role=user.get('role'),
+                details={'reason': 'invalid_credentials', 'remaining_attempts': remaining_attempts}
+            )
+            return api_error(
+                'AUTH_INVALID_CREDENTIALS',
+                'Invalid email or password',
+                401,
+                details={'remaining_attempts': remaining_attempts}
+            )
+
+        clear_failed_login(identifier)
+        log_audit_event(
+            action='login',
+            outcome='success',
+            user_id=user.get('id'),
+            actor_identifier=identifier,
+            actor_role=user.get('role'),
+            details={'login_method': 'password'}
+        )
 
         # Login successful - return user info (excluding password)
         response_data = {
-            'success': True,
             'userId': user['id'],
             'name': user['name'],
             'role': user['role']
@@ -2536,14 +3004,11 @@ def login():
         if user.get('roll_number'):
             response_data['rollNumber'] = user['roll_number']
         
-        return jsonify(response_data), 200
+        return api_success(response_data, status_code=200)
 
     except Exception as e:
-        print(f"Login error: {str(e)}")
-        return jsonify({
-            'success': False,
-            'message': 'An error occurred during login'
-        }), 500
+        log_event(logging.ERROR, 'login_error', error=str(e))
+        return api_error('AUTH_LOGIN_FAILED', 'An error occurred during login', 500)
 
 @app.route('/api/user/change-password', methods=['POST'])
 def change_password():
@@ -2920,19 +3385,21 @@ def submit_room_change_request():
             requested_room_id = requested_room['id'] if requested_room else None
 
         preference_reason = full_reason[:250]
+        room_preference = preferred_room or None
 
         cursor.execute("""
             INSERT INTO room_change_requests
             (student_id, current_room_id, requested_room_id, requested_block_id,
-             preference_reason, full_reason, status)
-            VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+             preference_reason, full_reason, room_preference, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending')
         """, (
             student['id'],
             student.get('room_id'),
             requested_room_id,
             requested_block_id,
             preference_reason,
-            full_reason
+            full_reason,
+            room_preference
         ))
         connection.commit()
 
@@ -3073,6 +3540,8 @@ def get_student_leaves(user_id):
         """
         cursor.execute(query, (student['id'],))
         leaves = cursor.fetchall()
+
+        leaves = [serialize_row(row) for row in leaves]
         
         cursor.close()
         connection.close()
@@ -3234,7 +3703,7 @@ def send_outpass_otp(outpass_id):
     try:
         connection = get_db_connection()
         if not connection:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            return api_error('DB_CONNECTION_FAILED', 'Database connection failed', 500)
 
         cursor = connection.cursor(dictionary=True)
         
@@ -3252,14 +3721,28 @@ def send_outpass_otp(outpass_id):
         if not outpass:
             cursor.close()
             connection.close()
-            return jsonify({'success': False, 'message': 'Outpass not found or not eligible for OTP'}), 404
+            log_audit_event(
+                action='outpass_otp_send',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'not_otp_eligible'}
+            )
+            return api_error('OUTPASS_NOT_OTP_ELIGIBLE', 'Outpass not found or not eligible for OTP', 404)
         
         # Check if parent email exists
         parent_email = outpass.get('parent_email')
         if not parent_email:
             cursor.close()
             connection.close()
-            return jsonify({'success': False, 'message': 'Parent email not found. Please update your profile with parent email.'}), 400
+            log_audit_event(
+                action='outpass_otp_send',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'parent_email_missing'}
+            )
+            return api_error('PARENT_EMAIL_MISSING', 'Parent email not found. Please update your profile with parent email.', 400)
         
         # Check if OTP was already sent recently (within 2 minutes to prevent spam)
         if outpass.get('otp_sent_at'):
@@ -3273,23 +3756,34 @@ def send_outpass_otp(outpass_id):
                 remaining_seconds = int((timedelta(minutes=2) - time_since_sent).total_seconds())
                 cursor.close()
                 connection.close()
-                return jsonify({
-                    'success': False, 
-                    'message': f'OTP already sent. Please wait {remaining_seconds} seconds before requesting again.',
-                    'already_sent': True,
-                    'parent_contact': parent_email
-                }), 429
+                log_audit_event(
+                    action='outpass_otp_send',
+                    outcome='failure',
+                    target_type='outpass',
+                    target_id=outpass_id,
+                    details={'reason': 'rate_limited', 'retry_after_seconds': remaining_seconds}
+                )
+                return api_error(
+                    'OTP_RATE_LIMITED',
+                    f'OTP already sent. Please wait {remaining_seconds} seconds before requesting again.',
+                    429,
+                    details={
+                        'already_sent': True,
+                        'parent_contact': parent_email,
+                        'retry_after_seconds': remaining_seconds
+                    }
+                )
         
-        # Generate 6-digit OTP
-        import random
-        otp_code = str(random.randint(100000, 999999))
+        # Generate secure 6-digit OTP and store only a hash.
+        otp_code = generate_otp_code()
+        otp_hash = hash_otp_code(otp_code)
         
         # Update outpass with OTP code and sent timestamp
         cursor.execute("""
             UPDATE outpasses 
             SET otp_code = %s, otp_sent_at = NOW()
             WHERE id = %s
-        """, (otp_code, outpass_id))
+        """, (otp_hash, outpass_id))
         connection.commit()
         
         # Send OTP via email to parent ONLY
@@ -3400,24 +3894,37 @@ def send_outpass_otp(outpass_id):
             
             cursor.close()
             connection.close()
-            
-            return jsonify({
-                'success': True, 
-                'message': f'OTP sent successfully to parent email: {parent_email}',
-                'email_sent': email_sent,
-                'parent_email': parent_email
-            }), 200
+            log_audit_event(
+                action='outpass_otp_send',
+                outcome='success',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'email_sent': email_sent, 'parent_email': parent_email}
+            )
+
+            return api_success(
+                {
+                    'email_sent': email_sent,
+                    'parent_email': parent_email
+                },
+                message=f'OTP sent successfully to parent email: {parent_email}',
+                status_code=200
+            )
         else:
             cursor.close()
             connection.close()
-            return jsonify({
-                'success': False, 
-                'message': 'Parent email not available. Please update profile.'
-            }), 400
+            log_audit_event(
+                action='outpass_otp_send',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'parent_email_not_available'}
+            )
+            return api_error('PARENT_EMAIL_MISSING', 'Parent email not available. Please update profile.', 400)
             
     except Exception as e:
-        print(f"Error sending OTP: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        log_event(logging.ERROR, 'send_outpass_otp_error', outpass_id=outpass_id, error=str(e))
+        return api_error('OTP_SEND_FAILED', 'Failed to send OTP', 500)
 
 
 @app.route('/api/student/outpass/<int:outpass_id>/verify-otp', methods=['POST'])
@@ -3428,11 +3935,18 @@ def verify_outpass_otp(outpass_id):
         otp_input = data.get('otp')
         
         if not otp_input:
-            return jsonify({'success': False, 'message': 'OTP is required'}), 400
+            log_audit_event(
+                action='outpass_otp_verify',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'otp_missing'}
+            )
+            return api_error('OTP_REQUIRED', 'OTP is required', 400)
         
         connection = get_db_connection()
         if not connection:
-            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            return api_error('DB_CONNECTION_FAILED', 'Database connection failed', 500)
 
         cursor = connection.cursor(dictionary=True)
         
@@ -3446,7 +3960,14 @@ def verify_outpass_otp(outpass_id):
         if not outpass:
             cursor.close()
             connection.close()
-            return jsonify({'success': False, 'message': 'Outpass not found or already processed'}), 404
+            log_audit_event(
+                action='outpass_otp_verify',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'outpass_not_found'}
+            )
+            return api_error('OUTPASS_NOT_FOUND', 'Outpass not found or already processed', 404)
         
         # Check OTP expiry (30 minutes)
         if outpass['otp_sent_at']:
@@ -3458,7 +3979,14 @@ def verify_outpass_otp(outpass_id):
             if datetime.now() - otp_sent_time > timedelta(minutes=30):
                 cursor.close()
                 connection.close()
-                return jsonify({'success': False, 'message': 'OTP has expired. Please request a new OTP.'}), 400
+                log_audit_event(
+                    action='outpass_otp_verify',
+                    outcome='failure',
+                    target_type='outpass',
+                    target_id=outpass_id,
+                    details={'reason': 'otp_expired'}
+                )
+                return api_error('OTP_EXPIRED', 'OTP has expired. Please request a new OTP.', 400)
         
         # Increment OTP attempts
         cursor.execute("""
@@ -3472,39 +4000,70 @@ def verify_outpass_otp(outpass_id):
         if outpass['otp_attempts'] >= 5:
             cursor.close()
             connection.close()
-            return jsonify({'success': False, 'message': 'Maximum OTP attempts exceeded. Please contact warden.'}), 400
+            log_audit_event(
+                action='outpass_otp_verify',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'attempts_exceeded'}
+            )
+            return api_error('OTP_ATTEMPTS_EXCEEDED', 'Maximum OTP attempts exceeded. Please contact warden.', 400)
         
-        # Verify OTP
-        if outpass['otp_code'] == otp_input:
+        # Verify OTP (supports hashed storage and legacy plaintext values).
+        stored_otp = outpass.get('otp_code') or ''
+        input_hash = hash_otp_code(otp_input)
+        otp_matches = (
+            (len(stored_otp) == 64 and hmac.compare_digest(stored_otp, input_hash))
+            or (len(stored_otp) == 6 and hmac.compare_digest(stored_otp, str(otp_input)))
+        )
+        if otp_matches:
             # OTP is correct, auto-approve outpass
             cursor.execute("""
                 UPDATE outpasses 
                 SET status = 'approved_otp',
                     otp_verified_at = NOW(),
-                    approved_at = NOW()
+                    approved_at = NOW(),
+                    otp_code = NULL
                 WHERE id = %s
             """, (outpass_id,))
             connection.commit()
             
             cursor.close()
             connection.close()
-            
-            return jsonify({
-                'success': True, 
-                'message': 'OTP verified successfully! Outpass approved.',
-                'status': 'approved_otp'
-            }), 200
+            log_audit_event(
+                action='outpass_otp_verify',
+                outcome='success',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'status': 'approved_otp'}
+            )
+
+            return api_success(
+                {'status': 'approved_otp'},
+                message='OTP verified successfully! Outpass approved.',
+                status_code=200
+            )
         else:
             cursor.close()
             connection.close()
-            return jsonify({
-                'success': False, 
-                'message': f'Invalid OTP. {5 - (outpass["otp_attempts"] + 1)} attempts remaining.'
-            }), 400
+            remaining_attempts = max(0, 5 - (outpass['otp_attempts'] + 1))
+            log_audit_event(
+                action='outpass_otp_verify',
+                outcome='failure',
+                target_type='outpass',
+                target_id=outpass_id,
+                details={'reason': 'invalid_otp', 'remaining_attempts': remaining_attempts}
+            )
+            return api_error(
+                'OTP_INVALID',
+                f'Invalid OTP. {remaining_attempts} attempts remaining.',
+                400,
+                details={'remaining_attempts': remaining_attempts}
+            )
             
     except Exception as e:
-        print(f"Error verifying OTP: {e}")
-        return jsonify({'success': False, 'message': str(e)}), 500
+        log_event(logging.ERROR, 'verify_outpass_otp_error', outpass_id=outpass_id, error=str(e))
+        return api_error('OTP_VERIFY_FAILED', 'Failed to verify OTP', 500)
 
 
 @app.route('/api/student/complaint', methods=['POST'])
@@ -3588,7 +4147,7 @@ def create_complaint():
                 WHERE LOWER(t.specialization) IN ({placeholders})
                 AND t.availability_status IN ('available', 'busy')
                 AND u.status = 'active'
-                ORDER BY t.availability_status DESC, u.id
+                ORDER BY CASE WHEN t.availability_status = 'available' THEN 0 ELSE 1 END, u.id
                 LIMIT 1
             """
             cursor.execute(query, tuple(s.lower() for s in required_specializations))
@@ -3887,7 +4446,7 @@ def get_warden_students():
         cursor = connection.cursor(dictionary=True)
         
         query = """
-            SELECT s.*, u.name, u.email, b.block_name, r.room_number
+            SELECT s.*, u.name, u.email, u.status, b.block_name, r.room_number
             FROM students s
             JOIN users u ON s.user_id = u.id
             LEFT JOIN rooms r ON s.room_id = r.id
@@ -3902,6 +4461,45 @@ def get_warden_students():
         
         return jsonify({'success': True, 'data': students}), 200
         
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/dashboard', methods=['GET'])
+def get_warden_dashboard():
+    """Get summary stats for warden dashboard."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        stats = {}
+
+        cursor.execute("SELECT COUNT(*) AS count FROM students WHERE registration_status = 'approved'")
+        stats['total_students'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) AS count FROM rooms")
+        stats['total_rooms'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT CAST(SUM(occupied_count) AS UNSIGNED) AS occupied FROM rooms")
+        occupancy_row = cursor.fetchone()
+        stats['occupied_rooms'] = int((occupancy_row or {}).get('occupied') or 0)
+
+        cursor.execute("SELECT COUNT(*) AS count FROM leave_requests WHERE status = 'pending'")
+        stats['pending_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) AS count FROM complaints WHERE status IN ('pending', 'assigned', 'in_progress', 'delayed')")
+        stats['active_complaints'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) AS count FROM outpasses WHERE status IN ('pending', 'pending_otp')")
+        stats['pending_outpasses'] = cursor.fetchone()['count']
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': stats}), 200
+
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -5699,9 +6297,9 @@ def get_room_change_requests():
                    s.roll_number,
                    s.branch,
                    s.phone,
-                   cr.room_number as current_room_number,
-                   cb.block_name as current_block_name,
-                   rr.room_number as requested_room_number,
+                   COALESCE(cr.room_number, acr.room_number) as current_room_number,
+                   COALESCE(cb.block_name, acb.block_name) as current_block_name,
+                   COALESCE(rr.room_number, NULLIF(rcr.room_preference, '')) as requested_room_number,
                    rb.block_name as requested_block_name,
                    rr.capacity as requested_room_capacity,
                    rr.occupied_count as requested_room_occupied
@@ -5710,6 +6308,9 @@ def get_room_change_requests():
             JOIN users u ON s.user_id = u.id
             LEFT JOIN rooms cr ON rcr.current_room_id = cr.id
             LEFT JOIN blocks cb ON cr.block_id = cb.id
+            LEFT JOIN room_allocations ra ON s.id = ra.student_id AND ra.status = 'active'
+            LEFT JOIN rooms acr ON ra.room_id = acr.id
+            LEFT JOIN blocks acb ON acr.block_id = acb.id
             LEFT JOIN rooms rr ON rcr.requested_room_id = rr.id
             LEFT JOIN blocks rb ON rcr.requested_block_id = rb.id
             ORDER BY rcr.created_at DESC
@@ -5907,6 +6508,177 @@ def get_admin_dashboard():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+def _format_relative_time(activity_time):
+    """Convert datetime to compact relative string for dashboard feeds."""
+    if not activity_time:
+        return 'Unknown'
+
+    if isinstance(activity_time, str):
+        return activity_time
+
+    now = datetime.now()
+    diff = now - activity_time
+    seconds = int(diff.total_seconds())
+
+    if seconds < 60:
+        return 'Just now'
+    if seconds < 3600:
+        minutes = seconds // 60
+        return f"{minutes} min{'s' if minutes != 1 else ''} ago"
+    if seconds < 86400:
+        hours = seconds // 3600
+        return f"{hours} hour{'s' if hours != 1 else ''} ago"
+
+    days = diff.days
+    return f"{days} day{'s' if days != 1 else ''} ago"
+
+
+@app.route('/api/admin/dashboard/recent-activities', methods=['GET'])
+def get_admin_recent_activities():
+    """Get recent admin activities from real operational tables."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        activities = []
+
+        cursor.execute("""
+            SELECT c.id, u.name AS student_name, c.status, c.created_at AS activity_time
+            FROM complaints c
+            JOIN students s ON c.student_id = s.id
+            JOIN users u ON s.user_id = u.id
+            ORDER BY c.created_at DESC
+            LIMIT 5
+        """)
+        for row in cursor.fetchall():
+            status = (row.get('status') or 'pending').lower()
+            action = 'Complaint submitted' if status in ['pending', 'assigned', 'in_progress', 'delayed'] else 'Complaint resolved'
+            activities.append({
+                'id': f"complaint_{row['id']}",
+                'type': 'complaint',
+                'action': f"{action} by {row.get('student_name', 'student')}",
+                'time': _format_relative_time(row.get('activity_time')),
+                'status': 'pending' if status in ['pending', 'assigned', 'in_progress', 'delayed'] else 'resolved',
+                '_sort_time': row.get('activity_time')
+            })
+
+        cursor.execute("""
+            SELECT s.id, u.name AS student_name, s.registration_status, u.created_at AS activity_time
+            FROM students s
+            JOIN users u ON s.user_id = u.id
+            ORDER BY u.created_at DESC
+            LIMIT 5
+        """)
+        for row in cursor.fetchall():
+            reg_status = (row.get('registration_status') or 'pending').lower()
+            action = 'Student registration approved' if reg_status == 'approved' else 'Student registration submitted'
+            activities.append({
+                'id': f"registration_{row['id']}",
+                'type': 'registration',
+                'action': f"{action}: {row.get('student_name', 'student')}",
+                'time': _format_relative_time(row.get('activity_time')),
+                'status': 'approved' if reg_status == 'approved' else 'pending',
+                '_sort_time': row.get('activity_time')
+            })
+
+        cursor.execute("""
+            SELECT o.id, u.name AS student_name, o.status, o.created_at AS activity_time
+            FROM outpasses o
+            JOIN students s ON o.student_id = s.id
+            JOIN users u ON s.user_id = u.id
+            ORDER BY o.created_at DESC
+            LIMIT 5
+        """)
+        for row in cursor.fetchall():
+            outpass_status = (row.get('status') or 'pending').lower()
+            activities.append({
+                'id': f"outpass_{row['id']}",
+                'type': 'outpass',
+                'action': f"Outpass request by {row.get('student_name', 'student')}",
+                'time': _format_relative_time(row.get('activity_time')),
+                'status': 'approved' if outpass_status in ['approved', 'approved_otp', 'exited', 'returned'] else 'pending',
+                '_sort_time': row.get('activity_time')
+            })
+
+        activities.sort(key=lambda x: x.get('_sort_time') or datetime.min, reverse=True)
+        activities = activities[:10]
+        for row in activities:
+            row.pop('_sort_time', None)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': activities}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/dashboard/pending-approvals', methods=['GET'])
+def get_admin_pending_approvals():
+    """Get pending approval queue for admin dashboard from real data."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        pending_items = []
+
+        cursor.execute("""
+            SELECT s.id, u.name, u.created_at AS created_time
+            FROM students s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.registration_status = 'pending'
+            ORDER BY u.created_at DESC
+            LIMIT 5
+        """)
+        for row in cursor.fetchall():
+            pending_items.append({
+                'id': f"registration_{row['id']}",
+                'type': 'Registration',
+                'name': row.get('name') or 'Student',
+                'date': row.get('created_time'),
+                'priority': 'high',
+                '_sort_time': row.get('created_time')
+            })
+
+        cursor.execute("""
+            SELECT o.id, u.name, o.created_at AS created_time
+            FROM outpasses o
+            JOIN students s ON o.student_id = s.id
+            JOIN users u ON s.user_id = u.id
+            WHERE o.status IN ('pending', 'pending_otp')
+            ORDER BY o.created_at DESC
+            LIMIT 5
+        """)
+        for row in cursor.fetchall():
+            pending_items.append({
+                'id': f"outpass_{row['id']}",
+                'type': 'Outpass',
+                'name': row.get('name') or 'Student',
+                'date': row.get('created_time'),
+                'priority': 'medium',
+                '_sort_time': row.get('created_time')
+            })
+
+        pending_items.sort(key=lambda x: x.get('_sort_time') or datetime.min, reverse=True)
+        pending_items = pending_items[:10]
+        for row in pending_items:
+            row.pop('_sort_time', None)
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': [serialize_row(item) for item in pending_items]}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/admin/reports/analytics', methods=['GET'])
 def get_admin_reports_analytics():
     """Get comprehensive analytics data for admin reports"""
@@ -6070,14 +6842,22 @@ def get_outpass_trend():
 def get_hostel_blocks():
     """Get all hostel blocks with room count information"""
     try:
+        requested_gender = (request.args.get('gender') or '').strip().lower()
+        if requested_gender and requested_gender not in ['male', 'female']:
+            return jsonify({'success': False, 'message': 'Invalid gender filter'}), 400
+
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
 
         cursor = connection.cursor(dictionary=True)
-        
-        query = "SELECT * FROM blocks ORDER BY block_name"
-        cursor.execute(query)
+
+        if requested_gender:
+            query = "SELECT * FROM blocks WHERE block_gender = %s ORDER BY block_name"
+            cursor.execute(query, (requested_gender,))
+        else:
+            query = "SELECT * FROM blocks ORDER BY block_name"
+            cursor.execute(query)
         blocks = cursor.fetchall()
         
         # Calculate room counts for each block
@@ -6126,12 +6906,20 @@ def get_blocks():
 def create_hostel_block():
     """Create a new hostel block and its rooms"""
     try:
+        default_amenities = 'WiFi, Study Table, Wardrobe, Ceiling Fan'
         data = request.get_json()
         block_name = (data.get('block_name') or '').strip()
         total_floors = data.get('total_floors')
         rooms_per_floor = data.get('rooms_per_floor', 4)
+        block_gender = (data.get('block_gender') or '').strip().lower()
 
-        if not block_name or not total_floors or total_floors < 1 or rooms_per_floor < 1:
+        if (
+            not block_name or
+            not total_floors or
+            total_floors < 1 or
+            rooms_per_floor < 1 or
+            block_gender not in ['male', 'female']
+        ):
             return jsonify({'success': False, 'message': 'Invalid block details'}), 400
 
         connection = get_db_connection()
@@ -6148,10 +6936,10 @@ def create_hostel_block():
             return jsonify({'success': False, 'message': 'Block name already exists'}), 409
 
         insert_block_query = """
-            INSERT INTO blocks (block_name, total_floors)
-            VALUES (%s, %s)
+            INSERT INTO blocks (block_name, total_floors, block_gender)
+            VALUES (%s, %s, %s)
         """
-        cursor.execute(insert_block_query, (block_name, total_floors))
+        cursor.execute(insert_block_query, (block_name, total_floors, block_gender))
         connection.commit()
 
         block_id = cursor.lastrowid
@@ -6161,10 +6949,10 @@ def create_hostel_block():
             for room_num in range(1, int(rooms_per_floor) + 1):
                 room_number = f"{floor}{room_num:02d}"
                 insert_room_query = """
-                    INSERT INTO rooms (block_id, room_number, capacity, status)
-                    VALUES (%s, %s, %s, 'available')
+                    INSERT INTO rooms (block_id, room_number, capacity, status, amenities)
+                    VALUES (%s, %s, %s, 'available', %s)
                 """
-                cursor.execute(insert_room_query, (block_id, room_number, 4))
+                cursor.execute(insert_room_query, (block_id, room_number, 4, default_amenities))
                 room_count += 1
 
         connection.commit()
@@ -6310,12 +7098,15 @@ def update_hostel_block(block_id):
     """Update hostel block details"""
     try:
         data = request.get_json()
-        block_name = data.get('block_name')
+        block_name = (data.get('block_name') or '').strip()
         total_floors = data.get('total_floors')
         description = data.get('description')
+        block_gender = (data.get('block_gender') or '').strip().lower()
         
         if not block_name:
             return jsonify({'success': False, 'message': 'Block name is required'}), 400
+        if block_gender not in ['male', 'female']:
+            return jsonify({'success': False, 'message': 'Block gender is required'}), 400
         
         connection = get_db_connection()
         if not connection:
@@ -6335,10 +7126,10 @@ def update_hostel_block(block_id):
         # Update block
         update_query = """
             UPDATE blocks 
-            SET block_name = %s, total_floors = %s, description = %s
+            SET block_name = %s, total_floors = %s, description = %s, block_gender = %s
             WHERE id = %s
         """
-        cursor.execute(update_query, (block_name, total_floors, description, block_id))
+        cursor.execute(update_query, (block_name, total_floors, description, block_gender, block_id))
         connection.commit()
         
         cursor.close()
@@ -6426,6 +7217,27 @@ def update_rooms_in_block():
             cursor.close()
             connection.close()
             return jsonify({'success': False, 'message': 'Block not found'}), 404
+
+        # Safety guard: do not regenerate rooms if students are currently assigned in this block.
+        # Deleting rooms would nullify students.room_id and remove room_allocations via FK cascade.
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS assigned_count
+            FROM students s
+            JOIN rooms r ON s.room_id = r.id
+            WHERE r.block_id = %s
+            """,
+            (block_id,)
+        )
+        assigned_count = cursor.fetchone()['assigned_count']
+
+        if assigned_count > 0:
+            cursor.close()
+            connection.close()
+            return jsonify({
+                'success': False,
+                'message': 'Cannot regenerate rooms: students are already allocated in this block. Move students first.'
+            }), 400
         
         # Delete existing rooms for this block
         cursor.execute("DELETE FROM rooms WHERE block_id = %s", (block_id,))
@@ -6622,12 +7434,15 @@ def get_all_users():
         if role:
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
-                    s.roll_number, s.college_name, s.branch, s.year, s.phone, s.fee_status,
+                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status,
+                    COALESCE(s.phone, w.phone, sp.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
+                    COALESCE(b.block_name, w.hostel_block) AS block,
                     sp.employee_id AS security_employee_id,
                     sp.shift_timing, sp.gate_assigned, sp.phone AS security_phone
                 FROM users u
                 LEFT JOIN students s ON u.id = s.user_id
+                LEFT JOIN wardens w ON u.id = w.user_id
                 LEFT JOIN rooms r ON s.room_id = r.id
                 LEFT JOIN blocks b ON r.block_id = b.id
                 LEFT JOIN security_personnel sp ON u.id = sp.user_id
@@ -6638,12 +7453,15 @@ def get_all_users():
         else:
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
-                    s.roll_number, s.college_name, s.branch, s.year, s.phone, s.fee_status,
+                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status,
+                    COALESCE(s.phone, w.phone, sp.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
+                    COALESCE(b.block_name, w.hostel_block) AS block,
                     sp.employee_id AS security_employee_id,
                     sp.shift_timing, sp.gate_assigned, sp.phone AS security_phone
                 FROM users u
                 LEFT JOIN students s ON u.id = s.user_id
+                LEFT JOIN wardens w ON u.id = w.user_id
                 LEFT JOIN rooms r ON s.room_id = r.id
                 LEFT JOIN blocks b ON r.block_id = b.id
                 LEFT JOIN security_personnel sp ON u.id = sp.user_id
@@ -6727,6 +7545,17 @@ def create_user():
                 VALUES (%s, %s, %s, %s, %s, 'approved', 'pending')
             """
             cursor.execute(insert_student_query, (user_id, roll_number, branch, year, phone))
+            connection.commit()
+        elif role == 'warden':
+            block = data.get('block')
+
+            cursor.execute(
+                """
+                INSERT INTO wardens (user_id, hostel_block, phone)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, block, phone)
+            )
             connection.commit()
         elif role == 'security':
             shift = data.get('shift')
@@ -7013,6 +7842,14 @@ def update_user_details(user_id):
                     warden_update = warden_update.rstrip(', ') + " WHERE user_id = %s"
                     warden_params.append(user_id)
                     cursor.execute(warden_update, warden_params)
+            elif block or phone:
+                cursor.execute(
+                    """
+                    INSERT INTO wardens (user_id, hostel_block, phone)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (user_id, block, phone)
+                )
         elif user['role'] == 'security':
             # Update security_personnel table if needed
             gate = data.get('gate')
@@ -7151,12 +7988,33 @@ def submit_student_registration():
         # Validate password length
         if len(data.get('password', '')) < 6:
             return jsonify({'success': False, 'message': 'Password must be at least 6 characters long'}), 400
+
+        student_gender = (data.get('gender') or '').strip().lower()
+        if student_gender not in ['male', 'female']:
+            return jsonify({'success': False, 'message': 'Gender must be male or female'}), 400
         
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
         
         cursor = connection.cursor(dictionary=True)
+
+        # Ensure preferred block belongs to the selected student gender
+        cursor.execute(
+            """
+            SELECT id FROM blocks
+            WHERE block_name = %s AND block_gender = %s
+            """,
+            (data['hostelBlock'], student_gender)
+        )
+        selected_block = cursor.fetchone()
+        if not selected_block:
+            cursor.close()
+            connection.close()
+            return jsonify({
+                'success': False,
+                'message': 'Selected hostel block is not available for the selected gender'
+            }), 400
         
         # Check if roll number already exists
         cursor.execute("SELECT id FROM users WHERE roll_number = %s", (data['rollNumber'],))
@@ -7193,7 +8051,7 @@ def submit_student_registration():
                 (user_id, roll_number, college_name, branch, year, gender, phone, parent_name, parent_phone, parent_email,
                  registration_status, fee_status, payment_proof_url, preferred_block, floor_preference, room_preference)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s)
-            """, (user_id, data['rollNumber'], data['collegeName'], data['branch'], data['year'], data['gender'], data['phone'],
+                    """, (user_id, data['rollNumber'], data['collegeName'], data['branch'], data['year'], student_gender, data['phone'],
                     data['parentName'], data['parentPhone'], data['parentEmail'], fee_status, payment_proof_url,
                     preferred_block, floor_preference, room_preference))
         
@@ -7326,6 +8184,102 @@ def get_pending_registrations():
         
         return jsonify({'success': True, 'data': registrations}), 200
         
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/registrations/approved', methods=['GET'])
+def get_approved_registrations():
+    """Get all approved student registrations"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        query = """
+            SELECT
+                u.id as user_id,
+                u.name,
+                u.email,
+                u.created_at as submitted_date,
+                s.id as student_id,
+                s.roll_number,
+                s.branch,
+                s.year,
+                s.phone,
+                s.parent_name,
+                s.parent_phone,
+                s.address,
+                s.blood_group,
+                s.emergency_contact,
+                s.fee_status,
+                s.registration_status,
+                s.payment_proof_url
+            FROM students s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.registration_status = 'approved'
+            ORDER BY u.created_at DESC
+        """
+        cursor.execute(query)
+        registrations = cursor.fetchall()
+
+        registrations = [serialize_row(row) for row in registrations]
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': registrations}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/admin/registrations/rejected', methods=['GET'])
+def get_rejected_registrations():
+    """Get all rejected student registrations"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        query = """
+            SELECT
+                u.id as user_id,
+                u.name,
+                u.email,
+                u.created_at as submitted_date,
+                s.id as student_id,
+                s.roll_number,
+                s.branch,
+                s.year,
+                s.phone,
+                s.parent_name,
+                s.parent_phone,
+                s.address,
+                s.blood_group,
+                s.emergency_contact,
+                s.fee_status,
+                s.registration_status,
+                s.payment_proof_url
+            FROM students s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.registration_status = 'rejected'
+            ORDER BY u.created_at DESC
+        """
+        cursor.execute(query)
+        registrations = cursor.fetchall()
+
+        registrations = [serialize_row(row) for row in registrations]
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': registrations}), 200
+
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -8474,12 +9428,17 @@ def get_security_parcels():
                     p.remarks,
                     s.roll_number,
                     u.name as student_name,
+                    s.preferred_block,
+                    s.room_preference,
                     r.room_number,
-                    b.block_name
+                    b.block_name,
+                    COALESCE(r.room_number, 'Pending Assignment') as display_room,
+                    COALESCE(b.block_name, s.preferred_block, 'Not Assigned') as display_block
                 FROM parcels p
                 JOIN students s ON p.student_id = s.id
                 JOIN users u ON s.user_id = u.id
-                LEFT JOIN rooms r ON s.room_id = r.id
+                LEFT JOIN room_allocations ra ON ra.student_id = s.id AND ra.status = 'active'
+                LEFT JOIN rooms r ON r.id = COALESCE(s.room_id, ra.room_id)
                 LEFT JOIN blocks b ON r.block_id = b.id
                 WHERE s.roll_number LIKE %s
                    OR u.name LIKE %s
@@ -8505,12 +9464,17 @@ def get_security_parcels():
                     p.remarks,
                     s.roll_number,
                     u.name as student_name,
+                    s.preferred_block,
+                    s.room_preference,
                     r.room_number,
-                    b.block_name
+                    b.block_name,
+                    COALESCE(r.room_number, 'Pending Assignment') as display_room,
+                    COALESCE(b.block_name, s.preferred_block, 'Not Assigned') as display_block
                 FROM parcels p
                 JOIN students s ON p.student_id = s.id
                 JOIN users u ON s.user_id = u.id
-                LEFT JOIN rooms r ON s.room_id = r.id
+                LEFT JOIN room_allocations ra ON ra.student_id = s.id AND ra.status = 'active'
+                LEFT JOIN rooms r ON r.id = COALESCE(s.room_id, ra.room_id)
                 LEFT JOIN blocks b ON r.block_id = b.id
                 ORDER BY p.received_date DESC, p.received_time DESC
                 LIMIT 100
@@ -9227,6 +10191,8 @@ if __name__ == '__main__':
     
     # Verify room occupancy on startup
     try:
+        apply_sql_migrations()
+        ensure_audit_log_table()
         ensure_outpass_monitoring_columns()
         ensure_holiday_mode_columns()
         ensure_complaint_monitoring_columns()

@@ -65,6 +65,43 @@
   gap: 0.42rem;
 }
 
+.password-input-wrapper {
+  position: relative;
+}
+
+.password-input-wrapper .form-input {
+  padding-right: 2.9rem;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 0.55rem;
+  color: #406186;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.password-toggle-btn:hover {
+  background: #e9f2ff;
+  color: #234a79;
+}
+
+.password-toggle-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(58, 122, 223, 0.2);
+}
+
 .login-page .form-label {
   color: #24466f;
   font-size: 0.9rem;
@@ -99,6 +136,11 @@
 .login-page .form-input:disabled,
 .login-page .form-select:disabled {
   opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.password-input-wrapper .form-input:disabled + .password-toggle-btn {
+  opacity: 0.6;
   cursor: not-allowed;
 }
 

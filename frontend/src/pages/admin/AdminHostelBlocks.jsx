@@ -19,6 +19,7 @@ const AdminHostelBlocks = () => {
   });
   const [blockFormData, setBlockFormData] = useState({
     block_name: '',
+    block_gender: '',
     total_floors: 1,
     rooms_per_floor: 4,
   });
@@ -69,6 +70,7 @@ const AdminHostelBlocks = () => {
     setIsCreateMode(false);
     setBlockFormData({
       block_name: block.block_name,
+      block_gender: block.block_gender || '',
       total_floors: block.total_floors || 1,
       rooms_per_floor: 4,
     });
@@ -80,6 +82,7 @@ const AdminHostelBlocks = () => {
     setIsCreateMode(true);
     setBlockFormData({
       block_name: '',
+      block_gender: '',
       total_floors: 1,
       rooms_per_floor: 4,
     });
@@ -229,7 +232,7 @@ const AdminHostelBlocks = () => {
     setRoomFormData({ room_number: '', capacity: 4 });
   };
   const handleSaveBlock = async () => {
-    if (!blockFormData.block_name || blockFormData.total_floors < 1) {
+    if (!blockFormData.block_name || !blockFormData.block_gender || blockFormData.total_floors < 1) {
       showBlockMessage('Please fill in all required fields', 'error');
       return;
     }
@@ -242,6 +245,7 @@ const AdminHostelBlocks = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             block_name: blockFormData.block_name,
+            block_gender: blockFormData.block_gender,
             total_floors: blockFormData.total_floors,
             rooms_per_floor: blockFormData.rooms_per_floor
           })
@@ -266,6 +270,7 @@ const AdminHostelBlocks = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             block_name: blockFormData.block_name,
+            block_gender: blockFormData.block_gender,
             total_floors: blockFormData.total_floors
           })
         });
@@ -347,7 +352,7 @@ const AdminHostelBlocks = () => {
           </p>
         </div>
         <button className="btn-add" onClick={handleAddBlock}>
-          âž• Add Block
+          Add Block
         </button>
       </div>
 
@@ -362,6 +367,7 @@ const AdminHostelBlocks = () => {
             <thead>
               <tr>
                 <th>Block Name</th>
+                <th>Block Type</th>
                 <th>Total Floors</th>
                 <th>Rooms per Floor</th>
                 <th>Total Rooms</th>
@@ -375,6 +381,7 @@ const AdminHostelBlocks = () => {
                     <div className="block-icon">🏢</div>
                     {block.block_name}
                   </td>
+                  <td>{block.block_gender === 'female' ? 'Girls' : 'Boys'}</td>
                   <td>{block.total_floors}</td>
                   <td>{block.rooms_per_floor || '0'}</td>
                   <td className="total-rooms">
@@ -452,6 +459,20 @@ const AdminHostelBlocks = () => {
                 />
               </div>
 
+              <div className="form-group">
+                <label>Block Type *</label>
+                <select
+                  className="form-input"
+                  name="block_gender"
+                  value={blockFormData.block_gender}
+                  onChange={handleBlockFormChange}
+                >
+                  <option value="">Select Block Type</option>
+                  <option value="male">Boys Hostel</option>
+                  <option value="female">Girls Hostel</option>
+                </select>
+              </div>
+
               <div className="form-group-row">
                 <div className="form-group">
                   <label>Total Floors *</label>
@@ -505,7 +526,13 @@ const AdminHostelBlocks = () => {
               <button
                 className="btn-primary"
                 onClick={handleSaveBlock}
-                disabled={submitting || !blockFormData.block_name || blockFormData.total_floors < 1 || blockFormData.rooms_per_floor < 1}
+                disabled={
+                  submitting ||
+                  !blockFormData.block_name ||
+                  !blockFormData.block_gender ||
+                  blockFormData.total_floors < 1 ||
+                  blockFormData.rooms_per_floor < 1
+                }
               >
                 {submitting ? 'Saving...' : isCreateMode ? 'Create Block' : 'Save Changes'}
               </button>
@@ -535,7 +562,7 @@ const AdminHostelBlocks = () => {
               {isAddingRoom && (
                 <div className="room-card" style={{ marginBottom: '1rem', border: '2px solid #10b981' }}>
                   <div className="room-edit-form">
-                    <h3 style={{ marginBottom: '1rem', color: '#10b981' }}>âž• Add New Room</h3>
+                    <h3 style={{ marginBottom: '1rem', color: '#10b981' }}>Add New Room</h3>
                     <div className="form-group">
                       <label>Room Number</label>
                       <input
@@ -684,7 +711,7 @@ const AdminHostelBlocks = () => {
                 disabled={isAddingRoom || editingRoom !== null}
                 style={{ minWidth: '120px' }}
               >
-                âž• Add Room
+                Add Room
               </button>
               <button
                 className="btn-secondary"
@@ -705,4 +732,6 @@ const AdminHostelBlocks = () => {
 };
 
 export default AdminHostelBlocks;
+
+
 
