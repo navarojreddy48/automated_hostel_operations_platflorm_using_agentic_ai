@@ -16,7 +16,42 @@
   box-shadow: 8px 0 26px rgba(15, 35, 74, 0.12);
   z-index: 1000;
   overflow: hidden;
-  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 320ms ease;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 320ms ease, transform 320ms ease;
+  transform: translateX(0);
+}
+
+/* Mobile Hidden State */
+@media (max-width: 767px) {
+  .unified-sidebar {
+    width: 260px;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    z-index: 1300;
+  }
+  
+  .unified-sidebar.mobile-open {
+    transform: translateX(0);
+    width: 260px;
+    box-shadow: 8px 0 26px rgba(15, 35, 74, 0.25);
+    z-index: 1300;
+  }
+}
+
+/* Mobile backdrop overlay - created via JS in Sidebar.jsx */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1250;
+}
+
+/* Toggle button icon visibility per breakpoint */
+.toggle-icon-desktop { display: inline; }
+.toggle-icon-mobile  { display: none; }
+
+@media (max-width: 767px) {
+  .toggle-icon-desktop { display: none; }
+  .toggle-icon-mobile  { display: inline; }
 }
 
 .unified-sidebar::-webkit-scrollbar {
@@ -193,9 +228,11 @@
   color: #ffffff;
 }
 
-.unified-sidebar.collapsed .sidebar-title,
-.unified-sidebar.collapsed .sidebar-section-label,
-.unified-sidebar.collapsed .sidebar-item-label {
+
+/* Only hide labels when collapsed and not mobile-open */
+.unified-sidebar.collapsed:not(.mobile-open) .sidebar-title,
+.unified-sidebar.collapsed:not(.mobile-open) .sidebar-section-label,
+.unified-sidebar.collapsed:not(.mobile-open) .sidebar-item-label {
   opacity: 0;
   max-width: 0;
   transform: translateX(-6px);
@@ -235,42 +272,17 @@
   margin: 0;
 }
 
-@media (max-width: 1024px) {
-  .unified-sidebar,
-  .unified-sidebar.collapsed {
-    width: 88px;
-  }
-
-  .sidebar-title,
-  .sidebar-section-label,
-  .sidebar-item-label {
-    display: none;
-  }
-
-  .sidebar-header {
-    padding: 14px 10px;
-  }
-
-  .sidebar-header-top {
-    justify-content: center;
-  }
-
-  .sidebar-toggle-btn {
-    margin-top: 12px;
-    width: 38px;
-    height: 38px;
-  }
-
-  .sidebar-item {
-    justify-content: center;
-    padding: 10px 8px;
+@media (min-width: 768px) and (max-width: 1024px) {
+  .unified-sidebar {
+    width: var(--sidebar-width);
+    transform: translateX(0);
   }
 }
 
-@media (max-width: 600px) {
-  .unified-sidebar,
-  .unified-sidebar.collapsed {
-    width: 76px;
+@media (max-width: 767px) {
+  .unified-sidebar {
+    /* Only set width for mobile-open, otherwise use transform for hidden state */
+    /* width: 76px;  <-- REMOVE this line to allow .mobile-open to set width */
   }
 
   .sidebar-logo {
@@ -283,6 +295,25 @@
     width: 32px;
     height: 32px;
     font-size: 16px;
+  }
+
+  .sidebar-header {
+    padding: 10px 8px;
+  }
+
+  .sidebar-menu {
+    padding: 8px 6px;
+  }
+
+  .sidebar-item {
+    padding: 8px 6px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .unified-sidebar {
+    width: var(--sidebar-width);
+    transform: translateX(0);
   }
 }
 

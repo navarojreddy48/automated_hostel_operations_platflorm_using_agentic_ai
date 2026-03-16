@@ -9,7 +9,7 @@ const StudentLayout = ({ children }) => {
     <div className="student-layout-wrapper">
       <Sidebar role="student" />
       <TopNavbar role="student" />
-      <main className="student-layout-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+      <main className="student-layout-main">
         {children || <Outlet />}
       </main>
     </div>

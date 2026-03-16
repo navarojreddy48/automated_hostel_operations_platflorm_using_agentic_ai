@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import ContextActionModal from '../../components/ContextActionModal';
+import { getAuthHeaders } from '../../utils/auth';
 import '../../styles/admin-wardens.css';
 
 const AdminWardens = () => {
@@ -16,7 +18,9 @@ const AdminWardens = () => {
 
   const fetchHostelBlocks = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/admin/hostel-blocks');
+      const res = await fetch('http://localhost:5000/api/admin/hostel-blocks', {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       
       if (data.success && Array.isArray(data.data)) {
@@ -30,7 +34,9 @@ const AdminWardens = () => {
   const fetchWardens = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/admin/users?role=warden');
+      const res = await fetch('http://localhost:5000/api/admin/users?role=warden', {
+        headers: getAuthHeaders()
+      });
       const data = await res.json();
       
       if (data.success && Array.isArray(data.data)) {
@@ -52,6 +58,7 @@ const AdminWardens = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
   const [selectedWarden, setSelectedWarden] = useState(null);
   // In-modal message state
   const [modalMessage, setModalMessage] = useState(null);
@@ -86,7 +93,7 @@ const AdminWardens = () => {
       filtered = filtered.filter(warden =>
         warden.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         warden.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        warden.id?.toString().includes(searchTerm)
+        warden.staff_id?.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
     
@@ -144,6 +151,9 @@ const AdminWardens = () => {
   };
 
   const handleChangePassword = async () => {
+    if (!selectedWarden) return;
+
+    setShowPasswordConfirm(false);
     if (!passwordFormData.password || !passwordFormData.confirmPassword) {
       showMessage('Please enter password in both fields', 'error');
       return;
@@ -159,15 +169,11 @@ const AdminWardens = () => {
       return;
     }
 
-    if (!confirm(`Change password for ${selectedWarden.name}?`)) {
-      return;
-    }
-
     setSubmitting(true);
     try {
       const res = await fetch(`http://localhost:5000/api/admin/user/${selectedWarden.id}/password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(true),
         body: JSON.stringify({ password: passwordFormData.password })
       });
       
@@ -216,7 +222,7 @@ const AdminWardens = () => {
 
         const res = await fetch(`http://localhost:5000/api/admin/user/${selectedWarden.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(true),
           body: JSON.stringify(payload)
         });
 
@@ -241,7 +247,7 @@ const AdminWardens = () => {
 
         const res = await fetch('http://localhost:5000/api/admin/user', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(true),
           body: JSON.stringify(payload),
         });
 
@@ -268,7 +274,7 @@ const AdminWardens = () => {
       const newStatus = warden.status === 'active' ? 'inactive' : 'active';
       const res = await fetch(`http://localhost:5000/api/admin/user/${warden.id}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -289,6 +295,7 @@ const AdminWardens = () => {
     try {
       const res = await fetch(`http://localhost:5000/api/admin/user/${selectedWarden.id}`, {
         method: 'DELETE',
+        headers: getAuthHeaders()
       });
 
       const data = await res.json();
@@ -326,18 +333,18 @@ const AdminWardens = () => {
 
   return (
     <div className="admin-wardens-page">
-      {/* Page Header */}
-      <div className="page-header">
-        <div className="header-content">
+      <div className="page-header page-header-card">
+        <div className="header-content page-header-text">
           <h1 className="page-title">Wardens</h1>
           <p className="page-subtitle">Manage hostel wardens</p>
         </div>
-        <button className="btn-primary btn-add" onClick={handleAddWarden}>
-          Add Warden
-        </button>
+        <div className="page-header-action">
+          <button className="btn-primary btn-add" onClick={handleAddWarden}>
+            Add Warden
+          </button>
+        </div>
       </div>
 
-      {/* Search & Filter Section */}
       <div className="search-filter-section">
         <div className="search-box">
           <input
@@ -361,12 +368,10 @@ const AdminWardens = () => {
         </select>
       </div>
 
-      {/* Results Info */}
       <div className="results-info">
         <span>Showing {filteredWardens.length} of {wardens.length} wardens</span>
       </div>
 
-      {/* Wardens Table */}
       {loading ? (
         <div className="empty-state-container">
           <div className="empty-state">
@@ -384,93 +389,145 @@ const AdminWardens = () => {
           </div>
         </div>
       ) : (
-        <div className="table-container">
-          <table className="wardens-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Staff ID</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Block</th>
-                <th>Joining Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredWardens.map((warden) => (
-                <tr key={warden.id}>
-                  <td>
-                    <div className="warden-cell">
-                      <div className="warden-avatar">
-                        {warden.name.charAt(0).toUpperCase()}
+        <>
+          <div className="table-container wardens-desktop-table">
+            <table className="wardens-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Staff ID</th>
+                  <th>Email</th>
+                  <th>Phone</th>
+                  <th>Block</th>
+                  <th>Joining Date</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredWardens.map((warden) => (
+                  <tr key={warden.id}>
+                    <td>
+                      <div className="warden-cell">
+                        <div className="warden-avatar">
+                          {warden.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="warden-info">
+                          <div className="warden-name">{warden.name}</div>
+                        </div>
                       </div>
-                      <div className="warden-info">
-                        <div className="warden-name">{warden.name}</div>
+                    </td>
+                    <td className="staff-id-cell">{warden.staff_id || 'N/A'}</td>
+                    <td>{warden.email}</td>
+                    <td>{warden.phone || 'N/A'}</td>
+                    <td>
+                      <div className="block-badge">{warden.block || 'Not Assigned'}</div>
+                    </td>
+                    <td>
+                      <span className="date-cell">
+                        {warden.created_at ? new Date(warden.created_at).toLocaleDateString('en-GB') : 'N/A'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status-badge ${warden.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                        {warden.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="actions-cell">
+                        <button className="btn-action btn-view" onClick={() => handleViewProfile(warden)} title="View Profile">
+                          👁️
+                        </button>
+                        <button className="btn-action btn-edit" onClick={() => handleEditWarden(warden)} title="Edit">
+                          ✏️
+                        </button>
+                        <button className="btn-action btn-password" onClick={() => handleChangePasswordClick(warden)} title="Change Password">
+                          🔐
+                        </button>
+                        <button
+                          className={`btn-action ${warden.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
+                          onClick={() => handleToggleStatus(warden)}
+                          title={warden.status === 'active' ? 'Deactivate' : 'Activate'}
+                        >
+                          {warden.status === 'active' ? '⏹️' : '▶️'}
+                        </button>
+                        <button className="btn-action btn-delete" onClick={() => handleDeleteClick(warden)} title="Delete">
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="wardens-mobile-cards">
+            {filteredWardens.map((warden) => (
+              <article key={warden.id} className="warden-mobile-card">
+                <div className="warden-mobile-header">
+                  <div className="warden-cell">
+                    <div className="warden-avatar">
+                      {warden.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="warden-info">
+                      <div className="warden-name">{warden.name}</div>
+                      <div className="warden-mobile-meta">
+                        <span className="warden-id-pill">{warden.staff_id || 'N/A'}</span>
+                        <span className={`status-badge ${warden.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                          {warden.status === 'active' ? 'Active' : 'Inactive'}
+                        </span>
                       </div>
                     </div>
-                  </td>
-                  <td className="staff-id-cell">{warden.staff_id || 'N/A'}</td>
-                  <td>{warden.email}</td>
-                  <td>{warden.phone || 'N/A'}</td>
-                  <td>
-                    <div className="block-badge">{warden.block || 'Not Assigned'}</div>
-                  </td>
-                  <td>
-                    <span className="date-cell">
+                  </div>
+                </div>
+
+                <div className="warden-mobile-grid">
+                  <div>
+                    <span className="warden-mobile-label">Email</span>
+                    <span className="warden-mobile-value">{warden.email}</span>
+                  </div>
+                  <div>
+                    <span className="warden-mobile-label">Phone</span>
+                    <span className="warden-mobile-value">{warden.phone || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="warden-mobile-label">Block</span>
+                    <span className="block-badge">{warden.block || 'Not Assigned'}</span>
+                  </div>
+                  <div>
+                    <span className="warden-mobile-label">Joining Date</span>
+                    <span className="warden-mobile-value">
                       {warden.created_at ? new Date(warden.created_at).toLocaleDateString('en-GB') : 'N/A'}
                     </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${warden.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
-                      {warden.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="actions-cell">
-                      <button
-                        className="btn-action btn-view"
-                        onClick={() => handleViewProfile(warden)}
-                        title="View Profile"
-                      >
-                        👁️
-                      </button>
-                      <button
-                        className="btn-action btn-edit"
-                        onClick={() => handleEditWarden(warden)}
-                        title="Edit"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        className="btn-action btn-password"
-                        onClick={() => handleChangePasswordClick(warden)}
-                        title="Change Password"
-                      >
-                        🔐
-                      </button>
-                      <button
-                        className={`btn-action ${warden.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
-                        onClick={() => handleToggleStatus(warden)}
-                        title={warden.status === 'active' ? 'Deactivate' : 'Activate'}
-                      >
-                        {warden.status === 'active' ? '⏹️' : '▶️'}
-                      </button>
-                      <button
-                        className="btn-action btn-delete"
-                        onClick={() => handleDeleteClick(warden)}
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </div>
+
+                <div className="warden-mobile-actions">
+                  <button className="btn-action btn-view" onClick={() => handleViewProfile(warden)} title="View Profile">
+                    👁️
+                  </button>
+                  <button className="btn-action btn-edit" onClick={() => handleEditWarden(warden)} title="Edit">
+                    ✏️
+                  </button>
+                  <button className="btn-action btn-password" onClick={() => handleChangePasswordClick(warden)} title="Change Password">
+                    🔐
+                  </button>
+                  <button
+                    className={`btn-action ${warden.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
+                    onClick={() => handleToggleStatus(warden)}
+                    title={warden.status === 'active' ? 'Deactivate' : 'Activate'}
+                  >
+                    {warden.status === 'active' ? '⏹️' : '▶️'}
+                  </button>
+                  <button className="btn-action btn-delete" onClick={() => handleDeleteClick(warden)} title="Delete">
+                    🗑️
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Add/Edit Warden Modal */}
@@ -513,6 +570,19 @@ const AdminWardens = () => {
                     className="form-input"
                   />
                 </div>
+                <div className="form-group">
+                  <label>Staff ID</label>
+                  <input
+                    type="text"
+                    value={selectedWarden ? (selectedWarden.staff_id || 'Will be auto-generated') : 'Will be auto-generated'}
+                    className="form-input"
+                    readOnly
+                    disabled
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-row">
                 <div className="form-group">
                   <label>Phone Number</label>
                   <input
@@ -585,47 +655,44 @@ const AdminWardens = () => {
               <h2>Warden Profile</h2>
               <button className="btn-close" onClick={() => setShowProfileModal(false)}>✕</button>
             </div>
-
             <div className="modal-body">
-              <div className="profile-section">
-                <div className="profile-avatar-large">
-                  {selectedWarden.name.charAt(0).toUpperCase()}
+              <div className="view-grid">
+                <div className="view-item">
+                  <div className="view-label">Name</div>
+                  <div className="view-value">{selectedWarden.name || 'N/A'}</div>
                 </div>
-                <div className="profile-main-info">
-                  <h3>{selectedWarden.name}</h3>
-                  <p className="profile-id">Staff ID: {selectedWarden.staff_id || 'N/A'}</p>
-                  <span className={`status-badge ${selectedWarden.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
-                    {selectedWarden.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
-                  </span>
+                <div className="view-item">
+                  <div className="view-label">Staff ID</div>
+                  <div className="view-value">{selectedWarden.staff_id || 'N/A'}</div>
                 </div>
-              </div>
-
-              <div className="profile-details">
-                <div className="detail-row">
-                  <span className="detail-label">Email</span>
-                  <span className="detail-value">{selectedWarden.email}</span>
+                <div className="view-item view-item-full">
+                  <div className="view-label">Email</div>
+                  <div className="view-value">{selectedWarden.email || 'N/A'}</div>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Phone</span>
-                  <span className="detail-value">{selectedWarden.phone || 'N/A'}</span>
+                <div className="view-item">
+                  <div className="view-label">Phone</div>
+                  <div className="view-value">{selectedWarden.phone || 'N/A'}</div>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Hostel</span>
-                  <span className="detail-value">{selectedWarden.hostel || 'Not Assigned'}</span>
+                <div className="view-item">
+                  <div className="view-label">Block</div>
+                  <div className="view-value">{selectedWarden.block || 'Not Assigned'}</div>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Block</span>
-                  <span className="detail-value">{selectedWarden.block || 'Not Assigned'}</span>
+                <div className="view-item">
+                  <div className="view-label">Status</div>
+                  <div className="view-value">
+                    <span className={`status-badge ${selectedWarden.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                      {selectedWarden.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
+                    </span>
+                  </div>
                 </div>
-                <div className="detail-row">
-                  <span className="detail-label">Joined On</span>
-                  <span className="detail-value">
+                <div className="view-item">
+                  <div className="view-label">Joined On</div>
+                  <div className="view-value">
                     {selectedWarden.created_at ? new Date(selectedWarden.created_at).toLocaleDateString('en-GB') : 'N/A'}
-                  </span>
+                  </div>
                 </div>
               </div>
             </div>
-
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setShowProfileModal(false)}>Close</button>
             </div>
@@ -733,7 +800,7 @@ const AdminWardens = () => {
               </button>
               <button 
                 className="btn-primary" 
-                onClick={handleChangePassword}
+                onClick={() => setShowPasswordConfirm(true)}
                 disabled={submitting || !passwordFormData.password || !passwordFormData.confirmPassword}
               >
                 {submitting ? 'Changing...' : 'Change Password'}
@@ -742,6 +809,17 @@ const AdminWardens = () => {
           </div>
         </div>
       )}
+
+      <ContextActionModal
+        open={showPasswordConfirm && !!selectedWarden}
+        title="Change Password"
+        message={selectedWarden ? `Change password for ${selectedWarden.name}?` : ''}
+        confirmText="Change Password"
+        cancelText="Cancel"
+        tone="warning"
+        onConfirm={handleChangePassword}
+        onClose={() => setShowPasswordConfirm(false)}
+      />
     </div>
   );
 };

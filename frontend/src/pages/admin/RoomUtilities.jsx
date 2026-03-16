@@ -1,31 +1,42 @@
 import { useState } from 'react';
+import ContextActionModal from '../../components/ContextActionModal';
 import '../../styles/admin-room-utilities.css';
 
 const RoomUtilities = () => {
-  const [loading, setLoading] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
   const [verifyResult, setVerifyResult] = useState(null);
   const [recalculateResult, setRecalculateResult] = useState(null);
+  const [showRecalculateConfirm, setShowRecalculateConfirm] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState({ open: false, title: '', message: '', tone: 'primary' });
+
+  const isBusy = verifying || recalculating;
+
+  const openFeedbackModal = (title, message, tone = 'primary') => {
+    setFeedbackModal({ open: true, title, message, tone });
+  };
 
   const handleVerifyOccupancy = async () => {
-    setLoading(true);
+    setVerifying(true);
     try {
       const response = await fetch('http://localhost:5000/api/admin/rooms/verify-occupancy');
       const data = await response.json();
       setVerifyResult(data);
     } catch (error) {
       console.error('Error verifying occupancy:', error);
-      alert('Failed to verify occupancy');
+      openFeedbackModal('Verification Failed', 'Failed to verify occupancy', 'danger');
     } finally {
-      setLoading(false);
+      setVerifying(false);
     }
   };
 
-  const handleRecalculateOccupancy = async () => {
-    if (!confirm('This will recalculate occupancy counts for all rooms. Continue?')) {
-      return;
-    }
-    
-    setLoading(true);
+  const handleRecalculateOccupancyClick = () => {
+    setShowRecalculateConfirm(true);
+  };
+
+  const handleRecalculateOccupancyConfirm = async () => {
+    setShowRecalculateConfirm(false);
+    setRecalculating(true);
     try {
       const response = await fetch('http://localhost:5000/api/admin/rooms/recalculate-occupancy', {
         method: 'POST'
@@ -33,25 +44,27 @@ const RoomUtilities = () => {
       const data = await response.json();
       if (data.success) {
         setRecalculateResult(data);
-        alert(data.message);
+        openFeedbackModal('Recalculation Complete', data.message, 'success');
         // Re-verify after recalculation
-        handleVerifyOccupancy();
+        await handleVerifyOccupancy();
       } else {
-        alert('Failed: ' + data.message);
+        openFeedbackModal('Recalculation Failed', `Failed: ${data.message}`, 'danger');
       }
     } catch (error) {
       console.error('Error recalculating occupancy:', error);
-      alert('Failed to recalculate occupancy');
+      openFeedbackModal('Recalculation Failed', 'Failed to recalculate occupancy', 'danger');
     } finally {
-      setLoading(false);
+      setRecalculating(false);
     }
   };
 
   return (
     <div className="room-utilities-container">
-      <header className="utilities-header">
-        <h1>Room Utilities</h1>
-        <p>Administrative tools for room management</p>
+      <header className="utilities-header page-header-card">
+        <div className="page-header-text">
+          <h1>Room Utilities</h1>
+          <p>Administrative tools for room management</p>
+        </div>
       </header>
 
       <div className="utilities-grid">
@@ -63,9 +76,9 @@ const RoomUtilities = () => {
           <button 
             className="btn-primary"
             onClick={handleVerifyOccupancy}
-            disabled={loading}
+            disabled={isBusy}
           >
-            {loading ? 'Verifying...' : 'Verify Now'}
+            {verifying ? 'Verifying...' : 'Verify Now'}
           </button>
 
           {verifyResult && (
@@ -101,10 +114,10 @@ const RoomUtilities = () => {
           <p>Fix all room occupancy counts by counting actual student assignments</p>
           <button 
             className="btn-warning"
-            onClick={handleRecalculateOccupancy}
-            disabled={loading}
+            onClick={handleRecalculateOccupancyClick}
+            disabled={isBusy}
           >
-            {loading ? 'Processing...' : 'Recalculate All'}
+            {recalculating ? 'Processing...' : 'Recalculate All'}
           </button>
 
           {recalculateResult && (
@@ -124,6 +137,28 @@ const RoomUtilities = () => {
           <li>These tools automatically run on server startup to ensure data integrity</li>
         </ul>
       </div>
+
+      <ContextActionModal
+        open={showRecalculateConfirm}
+        title="Recalculate Occupancy"
+        message="This will recalculate occupancy counts for all rooms. Continue?"
+        confirmText="Recalculate"
+        cancelText="Cancel"
+        tone="warning"
+        onConfirm={handleRecalculateOccupancyConfirm}
+        onClose={() => setShowRecalculateConfirm(false)}
+      />
+
+      <ContextActionModal
+        open={feedbackModal.open}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        confirmText="OK"
+        tone={feedbackModal.tone}
+        hideCancel
+        onConfirm={() => setFeedbackModal({ open: false, title: '', message: '', tone: 'primary' })}
+        onClose={() => setFeedbackModal({ open: false, title: '', message: '', tone: 'primary' })}
+      />
     </div>
   );
 };

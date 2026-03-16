@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { getCurrentUser } from '../../utils/auth';
+import { getAuthHeaders, getCurrentUser } from '../../utils/auth';
 import '../../styles/warden-dashboard.css';
+import '../../styles/warden-outpass.css';
 
 const formatLateDuration = (lateMinutes) => {
   const totalMinutes = Number(lateMinutes || 0);
@@ -27,7 +28,11 @@ const WardenOutpass = () => {
   const [actionDrafts, setActionDrafts] = useState({});
   const [actionErrors, setActionErrors] = useState({});
   const [showParentDetails, setShowParentDetails] = useState({});
+  const [holidayModal, setHolidayModal] = useState({ open: false, message: '', success: true });
   const currentUser = getCurrentUser();
+
+  const showHolidayModal = (message, success) => setHolidayModal({ open: true, message, success });
+  const closeHolidayModal = () => setHolidayModal({ open: false, message: '', success: true });
   
   // Holiday Mode state
   const [holidayMode, setHolidayMode] = useState(false);
@@ -63,11 +68,11 @@ const WardenOutpass = () => {
       const data = await res.json();
       if (data.success) {
         setHolidayMode(newMode);
-        alert(`Holiday Mode ${newMode ? 'enabled' : 'disabled'} successfully!`);
+        showHolidayModal(`Holiday Mode ${newMode ? 'enabled' : 'disabled'} successfully!`, true);
       }
     } catch (error) {
       console.error('Error toggling holiday mode:', error);
-      alert('Failed to toggle holiday mode');
+      showHolidayModal('Failed to toggle holiday mode. Please try again.', false);
     }
   };
 
@@ -76,10 +81,10 @@ const WardenOutpass = () => {
     setLoading(true);
     try {
       const [pendingRes, approvedRes, rejectedRes, alertsRes] = await Promise.all([
-        fetch('http://localhost:5000/api/warden/outpasses/pending'),
-        fetch('http://localhost:5000/api/warden/outpasses/approved'),
-        fetch('http://localhost:5000/api/warden/outpasses/rejected'),
-        fetch('http://localhost:5000/api/warden/outpasses/alerts')
+        fetch('http://localhost:5000/api/warden/outpasses/pending', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/outpasses/approved', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/outpasses/rejected', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/outpasses/alerts', { headers: getAuthHeaders() })
       ]);
 
       const pendingData = await pendingRes.json();
@@ -128,14 +133,14 @@ const WardenOutpass = () => {
     try {
       setUpdatingId(id);
       const endpoint = status === 'approved' 
-        ? `/api/warden/outpass/${id}/approve`
-        : `/api/warden/outpass/${id}/reject`;
+        ? `http://localhost:5000/api/warden/outpass/${id}/approve`
+        : `http://localhost:5000/api/warden/outpass/${id}/reject`;
 
       const rejection_reason = status === 'rejected' ? (actionDrafts[id]?.text || '') : null;
       
       const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ approved_by: currentUser?.userId || null, rejection_reason })
       });
 
@@ -199,25 +204,24 @@ const WardenOutpass = () => {
 
   return (
     <div className="leave-page">
-      <div className="leave-header">
-        <div>
-          <h1>Outpass Approvals</h1>
+      <div className="page-header-card outpass-page-header">
+        <div className="page-header-text">
+          <h2>Outpass Approvals</h2>
           <p>Manage student outpass requests.</p>
         </div>
-        
-        {/* Holiday Mode Toggle */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+
+        <div className="page-header-action-group outpass-header-actions">
           {holidayMode && (
-            <span style={{ padding: '0.5rem 1rem', background: '#fef3c7', color: '#92400e', borderRadius: '20px', fontSize: '14px', fontWeight: '600', border: '1px solid #fbbf24' }}>
+            <span className="outpass-holiday-badge">
               🎄 Holiday Mode Active
             </span>
           )}
-          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 1rem', background: holidayMode ? '#3b82f6' : '#e5e7eb', color: holidayMode ? 'white' : '#374151', borderRadius: '8px', fontWeight: '500', transition: 'all 0.2s' }}>
+          <label className={`outpass-holiday-toggle ${holidayMode ? 'active' : ''}`}>
             <input
               type="checkbox"
               checked={holidayMode}
               onChange={toggleHolidayMode}
-              style={{ cursor: 'pointer' }}
+              className="outpass-holiday-checkbox"
             />
             College Holiday Mode
           </label>
@@ -475,6 +479,39 @@ const WardenOutpass = () => {
               </article>
             );
           })}
+        </div>
+      )}
+      {holidayModal.open && (
+        <div className="modal-overlay" onClick={closeHolidayModal}>
+          <div className="modal-content" style={{ maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 style={{ fontSize: '16px', margin: 0 }}>
+                {holidayModal.success ? '🎄 Holiday Mode' : '⚠️ Error'}
+              </h2>
+              <button className="modal-close" onClick={closeHolidayModal}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: 0, color: holidayModal.success ? '#065f46' : '#991b1b', fontWeight: 500 }}>
+                {holidayModal.message}
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                onClick={closeHolidayModal}
+                style={{
+                  padding: '8px 24px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: holidayModal.success ? '#16a34a' : '#dc2626',
+                  color: '#fff',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -101,6 +101,72 @@
   animation: fadeInUp 0.5s ease 0.2s both;
 }
 
+.requests-mobile-cards {
+  display: none;
+}
+
+.request-mobile-card {
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 0.95rem;
+  margin-bottom: 0.85rem;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.request-mobile-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  margin-bottom: 0.8rem;
+}
+
+.request-mobile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.request-mobile-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.request-mobile-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.request-mobile-item .label {
+  font-size: 0.72rem;
+}
+
+.request-mobile-item .value {
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.request-mobile-actions {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.request-mobile-actions .btn-details,
+.request-mobile-actions .btn-approve,
+.request-mobile-actions .btn-reject {
+  width: 100%;
+  padding: 0.55rem 0.5rem;
+  font-size: 0.78rem;
+  text-align: center;
+}
+
 /* Table Styling */
 .requests-table {
   width: 100%;
@@ -337,7 +403,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2400 !important;
   padding: 2rem;
   animation: fadeIn 0.3s ease;
 }
@@ -360,6 +426,7 @@
   justify-content: space-between;
   align-items: flex-start;
   padding: 2rem;
+  padding-right: 4.25rem;
   border-bottom: 2px solid #e2e8f0;
   gap: 1rem;
   position: sticky;
@@ -369,10 +436,11 @@
 }
 
 .modal-header h2 {
-  font-size: 1.5rem;
+  font-size: 1.3rem;
   font-weight: 700;
-  color: #1a1a2e;
+  color: #1e293b !important;
   margin: 0 0 0.25rem 0;
+  line-height: 1.25;
 }
 
 .modal-subtitle {
@@ -382,24 +450,28 @@
 }
 
 .modal-close {
-  background: none;
-  border: none;
-  font-size: 2rem;
-  color: #64748b;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  font-size: 1.6rem;
+  color: #475569;
   cursor: pointer;
   padding: 0;
-  width: 2rem;
-  height: 2rem;
+  width: 40px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 6px;
   transition: all 0.3s ease;
   flex-shrink: 0;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
 }
 
 .modal-close:hover {
-  background: #f1f5f9;
+  background: #f8fafc;
+  border-color: #c8d5e6;
   color: #1e293b;
 }
 
@@ -656,25 +728,12 @@
     padding: 1rem;
   }
 
-  .requests-table-container {
-    border-radius: 8px;
-  }
-
-  .requests-table {
-    min-width: 900px;
-  }
-
-  .requests-table th,
-  .requests-table td {
-    padding: 1rem 0.75rem;
-    font-size: 0.85rem;
-  }
-
-  .requests-table th:nth-child(4),
-  .requests-table td:nth-child(4),
-  .requests-table th:nth-child(5),
-  .requests-table td:nth-child(5) {
+  .requests-desktop-table {
     display: none;
+  }
+
+  .requests-mobile-cards {
+    display: block;
   }
 
   .actions-cell {
@@ -699,7 +758,8 @@
   }
 
   .modal-header {
-    padding: 1.5rem;
+    padding: 1.25rem;
+    padding-right: 3.75rem;
   }
 
   .modal-body {
@@ -738,25 +798,14 @@
     padding: 0.6rem 0.75rem;
   }
 
-  .requests-table {
-    min-width: 100%;
-    font-size: 0.8rem;
+  .request-mobile-grid {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
   }
 
-  .requests-table th,
-  .requests-table td {
-    padding: 0.75rem 0.5rem;
-  }
-
-  .requests-table th:nth-child(2),
-  .requests-table td:nth-child(2),
-  .requests-table th:nth-child(3),
-  .requests-table td:nth-child(3),
-  .requests-table th:nth-child(4),
-  .requests-table td:nth-child(4),
-  .requests-table th:nth-child(5),
-  .requests-table td:nth-child(5) {
-    display: none;
+  .request-mobile-actions {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
   }
 
   .name {
@@ -790,11 +839,13 @@
 
   .modal-header {
     padding: 1.25rem;
-    flex-direction: column;
+    padding-right: 3.5rem;
+    flex-direction: row;
+    align-items: flex-start;
   }
 
-  .modal-close {
-    align-self: flex-end;
+  .modal-header h2 {
+    font-size: 1.15rem;
   }
 
   .modal-body {

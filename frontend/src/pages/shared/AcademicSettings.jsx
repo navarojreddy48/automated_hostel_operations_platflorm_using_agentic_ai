@@ -9,6 +9,12 @@ const AcademicSettings = () => {
   const [newBranch, setNewBranch] = useState('');
   const [editingCollege, setEditingCollege] = useState(null);
   const [editingBranch, setEditingBranch] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({
+    open: false,
+    type: null,
+    id: null,
+    name: ''
+  });
 
   useEffect(() => {
     fetchSettings();
@@ -126,11 +132,11 @@ const AcademicSettings = () => {
   };
 
   const deleteCollege = async (id) => {
-    if (!confirm('Delete this college?')) return;
     try {
       const res = await fetch(`http://localhost:5000/api/settings/colleges/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
+        setDeleteConfirm({ open: false, type: null, id: null, name: '' });
         fetchSettings();
       } else {
         alert(data.message || 'Failed to delete college');
@@ -141,11 +147,11 @@ const AcademicSettings = () => {
   };
 
   const deleteBranch = async (id) => {
-    if (!confirm('Delete this branch?')) return;
     try {
       const res = await fetch(`http://localhost:5000/api/settings/branches/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
+        setDeleteConfirm({ open: false, type: null, id: null, name: '' });
         fetchSettings();
       } else {
         alert(data.message || 'Failed to delete branch');
@@ -153,6 +159,37 @@ const AcademicSettings = () => {
     } catch (error) {
       console.error('Error deleting branch:', error);
     }
+  };
+
+  const requestDeleteCollege = (college) => {
+    setDeleteConfirm({
+      open: true,
+      type: 'college',
+      id: college.id,
+      name: college.name
+    });
+  };
+
+  const requestDeleteBranch = (branch) => {
+    setDeleteConfirm({
+      open: true,
+      type: 'branch',
+      id: branch.id,
+      name: branch.name
+    });
+  };
+
+  const confirmDelete = () => {
+    if (!deleteConfirm.id || !deleteConfirm.type) return;
+    if (deleteConfirm.type === 'college') {
+      deleteCollege(deleteConfirm.id);
+      return;
+    }
+    deleteBranch(deleteConfirm.id);
+  };
+
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({ open: false, type: null, id: null, name: '' });
   };
 
   if (loading) {
@@ -165,8 +202,8 @@ const AcademicSettings = () => {
 
   return (
     <div className="academic-settings-page">
-      <div className="academic-header">
-        <div>
+      <div className="academic-header page-header-card">
+        <div className="page-header-text">
           <h1>Academic Settings</h1>
           <p>Manage colleges and branches used in student registration and profiles.</p>
         </div>
@@ -185,8 +222,9 @@ const AcademicSettings = () => {
               placeholder="Add college name"
               value={newCollege}
               onChange={(e) => setNewCollege(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addCollege()}
             />
-            <button onClick={addCollege}>Add</button>
+            <button onClick={addCollege} disabled={!newCollege.trim()}>Add</button>
           </div>
 
           <div className="list">
@@ -194,7 +232,10 @@ const AcademicSettings = () => {
               <div className="empty">No colleges yet</div>
             ) : (
               colleges.map((college) => (
-                <div key={college.id} className="list-row">
+                <div
+                  key={college.id}
+                  className={`list-row ${editingCollege && editingCollege.id === college.id ? 'editing' : ''}`}
+                >
                   {editingCollege && editingCollege.id === college.id ? (
                     <>
                       <input
@@ -220,7 +261,7 @@ const AcademicSettings = () => {
                       <span className={`status ${college.status}`}>{college.status}</span>
                       <div className="row-actions">
                         <button onClick={() => startEditCollege(college)}>Edit</button>
-                        <button className="danger" onClick={() => deleteCollege(college.id)}>Delete</button>
+                        <button className="danger" onClick={() => requestDeleteCollege(college)}>Delete</button>
                       </div>
                     </>
                   )}
@@ -242,8 +283,9 @@ const AcademicSettings = () => {
               placeholder="Add branch name"
               value={newBranch}
               onChange={(e) => setNewBranch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addBranch()}
             />
-            <button onClick={addBranch}>Add</button>
+            <button onClick={addBranch} disabled={!newBranch.trim()}>Add</button>
           </div>
 
           <div className="list">
@@ -251,7 +293,10 @@ const AcademicSettings = () => {
               <div className="empty">No branches yet</div>
             ) : (
               branches.map((branch) => (
-                <div key={branch.id} className="list-row">
+                <div
+                  key={branch.id}
+                  className={`list-row ${editingBranch && editingBranch.id === branch.id ? 'editing' : ''}`}
+                >
                   {editingBranch && editingBranch.id === branch.id ? (
                     <>
                       <input
@@ -277,7 +322,7 @@ const AcademicSettings = () => {
                       <span className={`status ${branch.status}`}>{branch.status}</span>
                       <div className="row-actions">
                         <button onClick={() => startEditBranch(branch)}>Edit</button>
-                        <button className="danger" onClick={() => deleteBranch(branch.id)}>Delete</button>
+                        <button className="danger" onClick={() => requestDeleteBranch(branch)}>Delete</button>
                       </div>
                     </>
                   )}
@@ -287,6 +332,27 @@ const AcademicSettings = () => {
           </div>
         </section>
       </div>
+
+      {deleteConfirm.open && (
+        <div className="academic-confirm-overlay" onClick={closeDeleteConfirm}>
+          <div className="academic-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="academic-confirm-header">
+              <h3>Confirm Delete</h3>
+              <button type="button" className="academic-confirm-close" onClick={closeDeleteConfirm}>×</button>
+            </div>
+            <div className="academic-confirm-body">
+              <p>
+                Delete this {deleteConfirm.type} <strong>{deleteConfirm.name}</strong>?
+              </p>
+              <p className="academic-confirm-subtext">This action cannot be undone.</p>
+            </div>
+            <div className="academic-confirm-actions">
+              <button type="button" onClick={closeDeleteConfirm}>Cancel</button>
+              <button type="button" className="danger" onClick={confirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

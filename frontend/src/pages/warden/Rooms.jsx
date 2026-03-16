@@ -1,8 +1,22 @@
 import { useState, useEffect } from 'react';
 import OccupancyAnalytics from '../../components/OccupancyAnalytics';
+import { getCurrentUser } from '../../utils/auth';
 import '../../styles/warden-rooms.css';
 
 const Rooms = () => {
+  const currentUser = getCurrentUser();
+
+  const authHeaders = () => ({
+    'Content-Type': 'application/json',
+    'X-User-Id': String(currentUser?.userId || ''),
+    'X-User-Role': String(currentUser?.role || 'warden')
+  });
+
+  const authOnlyHeaders = () => ({
+    'X-User-Id': String(currentUser?.userId || ''),
+    'X-User-Role': String(currentUser?.role || 'warden')
+  });
+
   // State for rooms from database
   const [allRooms, setAllRooms] = useState([]);
   const [hostelBlocks, setHostelBlocks] = useState([]);
@@ -14,7 +28,9 @@ const Rooms = () => {
       setLoading(true);
       try {
         // Fetch hostel blocks
-        const blocksRes = await fetch('http://localhost:5000/api/admin/hostel-blocks');
+        const blocksRes = await fetch('http://localhost:5000/api/warden/hostel-blocks', {
+          headers: authOnlyHeaders()
+        });
         const blocksData = await blocksRes.json();
         
         // Fetch all rooms
@@ -287,9 +303,9 @@ const Rooms = () => {
 
     setSavingCapacity(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/rooms/${selectedRoom.id}`, {
+      const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           room_number: selectedRoom.roomNumber,
           capacity: capacityNum
@@ -322,8 +338,9 @@ const Rooms = () => {
   const handleDeleteRoom = async () => {
     setDeletingRoom(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/rooms/${selectedRoom.id}`, {
+      const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}`, {
         method: 'DELETE',
+        headers: authOnlyHeaders()
       });
       const data = await response.json();
       if (data.success) {
@@ -350,7 +367,9 @@ const Rooms = () => {
     const fetchRoomStudents = async () => {
       setStudentsLoading(true);
       try {
-        const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}/students`);
+        const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}/students`, {
+          headers: authOnlyHeaders()
+        });
         const data = await response.json();
 
         if (data.success && Array.isArray(data.data)) {
@@ -382,7 +401,9 @@ const Rooms = () => {
     const fetchRoomChangeRequests = async () => {
       setRequestsLoading(true);
       try {
-        const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}/change-requests`);
+        const response = await fetch(`http://localhost:5000/api/warden/rooms/${selectedRoom.id}/change-requests`, {
+          headers: authOnlyHeaders()
+        });
         const data = await response.json();
 
         if (data.success && Array.isArray(data.data)) {
@@ -412,10 +433,10 @@ const Rooms = () => {
   return (
     <div className="rooms-page">
       {/* Page Header */}
-      <div className="rooms-header">
-        <div>
-          <h1>Rooms</h1>
-          <p className="rooms-subtitle">View hostel room occupancy and availability from database</p>
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Rooms</h2>
+          <p>View hostel room occupancy and availability from database</p>
         </div>
       </div>
 

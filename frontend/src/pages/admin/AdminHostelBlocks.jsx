@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ContextActionModal from '../../components/ContextActionModal';
 import '../../styles/admin-hostel-blocks.css';
 
 const AdminHostelBlocks = () => {
@@ -28,6 +29,8 @@ const AdminHostelBlocks = () => {
   const [blockMessageType, setBlockMessageType] = useState('success');
   const [roomMessage, setRoomMessage] = useState(null);
   const [roomMessageType, setRoomMessageType] = useState('success');
+  const [pendingRoomDelete, setPendingRoomDelete] = useState(null);
+  const [pendingBlockDelete, setPendingBlockDelete] = useState(null);
 
   // Fetch data on component mount
   useEffect(() => {
@@ -199,14 +202,16 @@ const AdminHostelBlocks = () => {
     setRoomFormData({ room_number: '', capacity: 4 });
   };
 
-  const handleDeleteRoom = async (room) => {
-    if (!window.confirm(`Are you sure you want to delete Room ${room.room_number}?`)) {
-      return;
-    }
+  const handleDeleteRoomClick = (room) => {
+    setPendingRoomDelete(room);
+  };
 
-    setDeletingRoomId(room.id);
+  const handleDeleteRoomConfirm = async () => {
+    if (!pendingRoomDelete) return;
+
+    setDeletingRoomId(pendingRoomDelete.id);
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/rooms/${room.id}`, {
+      const response = await fetch(`http://localhost:5000/api/admin/rooms/${pendingRoomDelete.id}`, {
         method: 'DELETE'
       });
 
@@ -224,6 +229,7 @@ const AdminHostelBlocks = () => {
       showRoomMessage('Failed to delete room', 'error');
     } finally {
       setDeletingRoomId(null);
+      setPendingRoomDelete(null);
     }
   };
 
@@ -313,15 +319,16 @@ const AdminHostelBlocks = () => {
     }
   };
 
-  const handleDeleteBlock = async (block) => {
-    const confirmDelete = window.confirm(
-      `Delete ${block.block_name}? This will remove all rooms in the block.`
-    );
-    if (!confirmDelete) return;
+  const handleDeleteBlockClick = (block) => {
+    setPendingBlockDelete(block);
+  };
+
+  const handleDeleteBlockConfirm = async () => {
+    if (!pendingBlockDelete) return;
 
     setSubmitting(true);
     try {
-      const response = await fetch(`http://localhost:5000/api/admin/hostel-blocks/${block.id}`, {
+      const response = await fetch(`http://localhost:5000/api/admin/hostel-blocks/${pendingBlockDelete.id}`, {
         method: 'DELETE'
       });
       const data = await response.json();
@@ -339,21 +346,24 @@ const AdminHostelBlocks = () => {
       return;
     } finally {
       setSubmitting(false);
+      setPendingBlockDelete(null);
     }
   };
 
   return (
     <div className="admin-hostel-blocks">
-      <div className="page-header">
-        <div className="header-content">
+      <div className="page-header page-header-card">
+        <div className="header-content page-header-text">
           <h1>🏢 Hostel Blocks Management</h1>
           <p className="header-subtitle">
             Manage hostel building blocks, floors, and room configurations
           </p>
         </div>
-        <button className="btn-add" onClick={handleAddBlock}>
-          Add Block
-        </button>
+        <div className="page-header-action">
+          <button className="btn-add" onClick={handleAddBlock}>
+            Add Block
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -377,17 +387,19 @@ const AdminHostelBlocks = () => {
             <tbody>
               {hostelBlocks.map((block) => (
                 <tr key={block.id}>
-                  <td className="block-name">
-                    <div className="block-icon">🏢</div>
-                    {block.block_name}
+                  <td data-label="Block Name">
+                    <div className="block-name-cell">
+                      <span className="block-icon" aria-hidden="true">🏢</span>
+                      <span>{block.block_name}</span>
+                    </div>
                   </td>
-                  <td>{block.block_gender === 'female' ? 'Girls' : 'Boys'}</td>
-                  <td>{block.total_floors}</td>
-                  <td>{block.rooms_per_floor || '0'}</td>
-                  <td className="total-rooms">
+                  <td data-label="Block Type">{block.block_gender === 'female' ? 'Girls' : 'Boys'}</td>
+                  <td data-label="Total Floors">{block.total_floors}</td>
+                  <td data-label="Rooms per Floor">{block.rooms_per_floor || '0'}</td>
+                  <td className="total-rooms" data-label="Total Rooms">
                     {block.total_rooms || 0} rooms
                   </td>
-                  <td className="action-buttons">
+                  <td className="action-buttons" data-label="Actions">
                     <button
                       className="btn-view"
                       onClick={() => handleViewRooms(block)}
@@ -404,7 +416,7 @@ const AdminHostelBlocks = () => {
                     </button>
                     <button
                       className="btn-delete"
-                      onClick={() => handleDeleteBlock(block)}
+                      onClick={() => handleDeleteBlockClick(block)}
                       title="Delete block"
                       disabled={submitting}
                     >
@@ -674,7 +686,7 @@ const AdminHostelBlocks = () => {
                             </button>
                             <button
                               className="btn-delete-room"
-                              onClick={() => handleDeleteRoom(room)}
+                              onClick={() => handleDeleteRoomClick(room)}
                               disabled={deletingRoomId === room.id}
                               style={{
                                 flex: 1,
@@ -727,6 +739,28 @@ const AdminHostelBlocks = () => {
           </div>
         </div>
       )}
+
+      <ContextActionModal
+        open={!!pendingBlockDelete}
+        title="Delete Hostel Block"
+        message={pendingBlockDelete ? `Delete ${pendingBlockDelete.block_name}? This will remove all rooms in the block.` : ''}
+        confirmText="Delete Block"
+        cancelText="Cancel"
+        tone="danger"
+        onConfirm={handleDeleteBlockConfirm}
+        onClose={() => setPendingBlockDelete(null)}
+      />
+
+      <ContextActionModal
+        open={!!pendingRoomDelete}
+        title="Delete Room"
+        message={pendingRoomDelete ? `Delete Room ${pendingRoomDelete.room_number}?` : ''}
+        confirmText="Delete Room"
+        cancelText="Keep Room"
+        tone="danger"
+        onConfirm={handleDeleteRoomConfirm}
+        onClose={() => setPendingRoomDelete(null)}
+      />
     </div>
   );
 };

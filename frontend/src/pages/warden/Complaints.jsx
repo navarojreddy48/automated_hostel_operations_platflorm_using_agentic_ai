@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { getAuthHeaders } from '../../utils/auth';
 import '../../styles/warden-complaints.css';
 
 const WardenComplaints = () => {
@@ -36,8 +37,8 @@ const WardenComplaints = () => {
     setError('');
     try {
       const [complaintsRes, techniciansRes] = await Promise.all([
-        fetch('http://localhost:5000/api/warden/complaints/all'),
-        fetch('http://localhost:5000/api/warden/technicians')
+        fetch('http://localhost:5000/api/warden/complaints/all', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/technicians', { headers: getAuthHeaders() })
       ]);
 
       if (!complaintsRes.ok || !techniciansRes.ok) {
@@ -179,7 +180,7 @@ const WardenComplaints = () => {
         `http://localhost:5000/api/warden/complaint/${selectedComplaint.id}/assign`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getAuthHeaders(true),
           body: JSON.stringify({ technician_id: parseInt(assigningTechId) })
         }
       );
@@ -222,10 +223,10 @@ const WardenComplaints = () => {
   return (
     <main className="complaints-main">
         {/* Header */}
-        <div className="complaints-header">
-          <div>
-            <h1>Complaint Management</h1>
-            <p className="complaints-subtitle">View, manage, and assign maintenance complaints</p>
+        <div className="page-header-card">
+          <div className="page-header-text">
+            <h2>Complaint Management</h2>
+            <p>View, manage, and assign maintenance complaints</p>
           </div>
         </div>
 

@@ -276,8 +276,19 @@
   max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   animation: slideUp 0.3s ease;
+}
+
+.modal-content .modal-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.modal-content .modal-footer {
+  flex-shrink: 0;
 }
 
 .modal-header {
@@ -411,12 +422,27 @@
 
 .btn-save {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  color: #111827;
+}
+
+.mess-page .modal-footer .btn-save {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #111827 !important;
 }
 
 .btn-save:hover {
+  color: white;
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+}
+
+.mess-page .modal-footer .btn-save:hover:not(:disabled) {
+  color: #ffffff !important;
+}
+
+.mess-page .modal-footer .btn-save:disabled {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: #111827 !important;
 }
 
 .btn-cancel {

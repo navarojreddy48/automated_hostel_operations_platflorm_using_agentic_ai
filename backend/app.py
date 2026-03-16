@@ -1,6 +1,9 @@
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 import mysql.connector
+from flask import Flask, request, jsonify, g
+from flask_cors import CORS
+import mysql.connector
 from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime, date, time, timedelta
 from functools import wraps
@@ -102,7 +105,7 @@ SECURITY_RISK_MEDIUM_THRESHOLD = int(os.getenv('SECURITY_RISK_MEDIUM_THRESHOLD',
 SECURITY_RISK_HIGH_THRESHOLD = int(os.getenv('SECURITY_RISK_HIGH_THRESHOLD', '70'))
 
 LOGIN_MAX_ATTEMPTS = int(os.getenv('LOGIN_MAX_ATTEMPTS', '5'))
-LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '15'))
+LOGIN_LOCKOUT_MINUTES = int(os.getenv('LOGIN_LOCKOUT_MINUTES', '3'))
 LOGIN_TRACKING_WINDOW_MINUTES = int(os.getenv('LOGIN_TRACKING_WINDOW_MINUTES', '15'))
 LOGIN_ATTEMPT_STATE = {}
 LOGIN_ATTEMPT_LOCK = threading.Lock()
@@ -453,7 +456,7 @@ def enforce_prefix_role_access():
     return None
 
 def generate_staff_id(role, connection):
-    """Generate unique staff ID for new staff members"""
+    """Generate unique staff ID for new staff members."""
     import random
     import string
     
@@ -466,8 +469,8 @@ def generate_staff_id(role, connection):
     prefix = prefix_map.get(role, 'STF')
     cursor = connection.cursor(dictionary=True)
     
-    # Generate unique ID
-    while True:
+    # Generate unique ID with bounded attempts to avoid infinite loops.
+    for _ in range(2000):
         random_num = ''.join(random.choices(string.digits, k=3))
         staff_id = f"{prefix}{random_num}"
         
@@ -476,6 +479,30 @@ def generate_staff_id(role, connection):
         if not cursor.fetchone():
             cursor.close()
             return staff_id
+
+    cursor.close()
+    raise ValueError(f"Unable to generate unique staff ID for role {role}")
+
+
+def ensure_role_staff_id(cursor, connection, user_id, role, existing_staff_id=None):
+    """Ensure staff roles always have a unique, non-empty staff_id."""
+    staff_roles = {'warden', 'technician', 'security'}
+    if role not in staff_roles:
+        return existing_staff_id
+
+    normalized_staff_id = (existing_staff_id or '').strip()
+    if normalized_staff_id:
+        cursor.execute(
+            "SELECT id FROM users WHERE staff_id = %s AND id != %s",
+            (normalized_staff_id, user_id)
+        )
+        if cursor.fetchone():
+            raise ValueError(f"Duplicate staff ID detected for {role}")
+        return normalized_staff_id
+
+    generated_staff_id = generate_staff_id(role, connection)
+    cursor.execute("UPDATE users SET staff_id = %s WHERE id = %s", (generated_staff_id, user_id))
+    return generated_staff_id
 
 # Database connection helper
 def get_db_connection():
@@ -2935,11 +2962,27 @@ def login():
 
         # Query user by email, roll number, or staff ID
         query = """
-            SELECT * FROM users
-            WHERE (LOWER(email) = %s OR LOWER(roll_number) = %s OR LOWER(staff_id) = %s)
-              AND status = 'active'
+            SELECT
+                u.id,
+                u.name,
+                u.email,
+                u.password,
+                u.role,
+                u.status,
+                u.staff_id,
+                COALESCE(NULLIF(u.roll_number, ''), s.roll_number) AS roll_number
+            FROM users u
+            LEFT JOIN students s ON s.user_id = u.id
+            WHERE (
+                LOWER(TRIM(u.email)) = %s
+                OR LOWER(TRIM(COALESCE(NULLIF(u.roll_number, ''), s.roll_number))) = %s
+                OR LOWER(TRIM(s.roll_number)) = %s
+                OR LOWER(TRIM(u.staff_id)) = %s
+            )
+              AND u.status = 'active'
+            LIMIT 1
         """
-        cursor.execute(query, (identifier, identifier, identifier))
+        cursor.execute(query, (identifier, identifier, identifier, identifier))
         user = cursor.fetchone()
 
         cursor.close()
@@ -3609,8 +3652,25 @@ def create_outpass():
         return_time = data.get('return_time')
         approval_method = data.get('approval_method', 'manual')  # 'manual' or 'otp'
         
-        if not all([student_id, reason, destination, departure_date, return_date]):
+        if not all([student_id, reason, destination, departure_date, departure_time, return_date, return_time]):
             return jsonify({'success': False, 'message': 'Missing required fields'}), 400
+
+        try:
+            departure_date_obj = datetime.strptime(departure_date, '%Y-%m-%d').date()
+            return_date_obj = datetime.strptime(return_date, '%Y-%m-%d').date()
+            departure_datetime = datetime.strptime(f"{departure_date} {departure_time}", '%Y-%m-%d %H:%M')
+            return_datetime = datetime.strptime(f"{return_date} {return_time}", '%Y-%m-%d %H:%M')
+        except ValueError:
+            return jsonify({'success': False, 'message': 'Invalid date/time format.'}), 400
+
+        if departure_date_obj < date.today() or return_date_obj < date.today():
+            return jsonify({'success': False, 'message': 'Outpass dates cannot be in the past.'}), 400
+
+        if departure_datetime < datetime.now():
+            return jsonify({'success': False, 'message': 'Departure date and time must be from now onwards.'}), 400
+
+        if return_datetime <= departure_datetime:
+            return jsonify({'success': False, 'message': 'Expected return must be after departure date and time.'}), 400
         
         connection = get_db_connection()
         if not connection:
@@ -3636,13 +3696,6 @@ def create_outpass():
         )
 
         # In holiday mode, exit date must be the current day
-        try:
-            departure_date_obj = datetime.strptime(departure_date, '%Y-%m-%d').date()
-        except ValueError:
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Invalid departure_date format. Use YYYY-MM-DD.'}), 400
-
         if is_holiday_mode and departure_date_obj != date.today():
             cursor.close()
             connection.close()
@@ -4227,10 +4280,20 @@ def create_leave():
         if not student:
             return jsonify({'success': False, 'message': 'Student not found'}), 404
         
-        # Calculate total_days
-        from datetime import datetime
+        # Validate and calculate total_days
         from_dt = datetime.strptime(from_date, '%Y-%m-%d')
         to_dt = datetime.strptime(to_date, '%Y-%m-%d')
+
+        if from_dt.date() < date.today() or to_dt.date() < date.today():
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'message': 'Leave dates cannot be in the past.'}), 400
+
+        if to_dt < from_dt:
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'message': 'To date must be after or equal to from date.'}), 400
+
         total_days = (to_dt - from_dt).days + 1
         
         # Insert leave request using correct column names
@@ -4361,14 +4424,14 @@ def get_warden_recent_activities():
         
         # Recent leave approvals
         cursor.execute("""
-            SELECT l.id, s.name as student_name, l.status, l.approved_at as activity_time,
+            SELECT lr.id, s.name as student_name, lr.status, lr.approved_at as activity_time,
                    'leave' as activity_type
-            FROM leaves l
-            JOIN students st ON l.student_id = st.id
+            FROM leave_requests lr
+            JOIN students st ON lr.student_id = st.id
             JOIN users s ON st.user_id = s.id
-            WHERE l.status = 'approved'
-            AND l.approved_at IS NOT NULL
-            ORDER BY l.approved_at DESC
+            WHERE lr.status = 'approved'
+            AND lr.approved_at IS NOT NULL
+            ORDER BY lr.approved_at DESC
             LIMIT 5
         """)
         leave_activities = cursor.fetchall()
@@ -4437,7 +4500,7 @@ def get_warden_recent_activities():
 
 @app.route('/api/warden/students', methods=['GET'])
 def get_warden_students():
-    """Get all students (for warden dashboard)"""
+    """Get all students, including inactive ones, for the warden students page."""
     try:
         connection = get_db_connection()
         if not connection:
@@ -4451,7 +4514,7 @@ def get_warden_students():
             JOIN users u ON s.user_id = u.id
             LEFT JOIN rooms r ON s.room_id = r.id
             LEFT JOIN blocks b ON r.block_id = b.id
-            WHERE u.status = 'active'
+            ORDER BY u.created_at DESC
         """
         cursor.execute(query)
         students = cursor.fetchall()
@@ -4463,6 +4526,54 @@ def get_warden_students():
         
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/hostel-blocks', methods=['GET'])
+def get_warden_hostel_blocks():
+    """Allow wardens to fetch hostel blocks for student room reassignment flows."""
+    return get_hostel_blocks()
+
+
+@app.route('/api/warden/rooms/<int:block_id>', methods=['GET'])
+def get_warden_rooms_by_block(block_id):
+    """Allow wardens to fetch rooms for a selected block."""
+    return get_rooms_by_block(block_id)
+
+
+@app.route('/api/warden/rooms/<int:room_id>', methods=['PUT'])
+def update_warden_room(room_id):
+    """Allow wardens to update room details via warden-scoped route."""
+    return update_room(room_id)
+
+
+@app.route('/api/warden/rooms/<int:room_id>', methods=['DELETE'])
+def delete_warden_room(room_id):
+    """Allow wardens to delete rooms via warden-scoped route."""
+    return delete_room(room_id)
+
+
+@app.route('/api/warden/user/<int:user_id>', methods=['PUT'])
+def update_warden_student_details(user_id):
+    """Allow wardens to update student details via warden-scoped route."""
+    return update_user_details(user_id)
+
+
+@app.route('/api/warden/user/<int:user_id>', methods=['DELETE'])
+def delete_warden_student(user_id):
+    """Allow wardens to delete student records via warden-scoped route."""
+    return delete_user(user_id)
+
+
+@app.route('/api/warden/user/<int:user_id>/status', methods=['PUT'])
+def update_warden_student_status(user_id):
+    """Allow wardens to activate/deactivate student accounts via warden-scoped route."""
+    return update_user_status(user_id)
+
+
+@app.route('/api/warden/user/<int:user_id>/password', methods=['PUT'])
+def change_warden_student_password(user_id):
+    """Allow wardens to change student passwords via warden-scoped route."""
+    return change_user_password(user_id)
 
 
 @app.route('/api/warden/dashboard', methods=['GET'])
@@ -5907,7 +6018,7 @@ def add_technician():
         data = request.get_json()
         
         # Validate required fields
-        required_fields = ['name', 'email', 'password', 'employee_id', 'specialization', 'phone']
+        required_fields = ['name', 'email', 'password', 'specialization', 'phone']
         for field in required_fields:
             if not data.get(field):
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
@@ -5924,13 +6035,6 @@ def add_technician():
             cursor.close()
             connection.close()
             return jsonify({'success': False, 'message': 'Email already exists'}), 400
-
-        # Check if employee_id already exists
-        cursor.execute("SELECT id FROM technicians WHERE employee_id = %s", (data['employee_id'],))
-        if cursor.fetchone():
-            cursor.close()
-            connection.close()
-            return jsonify({'success': False, 'message': 'Employee ID already exists'}), 400
 
         # Hash password
         hashed_password = generate_password_hash(data['password'])
@@ -5953,7 +6057,7 @@ def add_technician():
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             user_id,
-            data['employee_id'],
+            staff_id,
             data['specialization'],
             data['phone'],
             data.get('alternate_phone'),
@@ -6104,6 +6208,28 @@ def update_technician_status(technician_id):
 
         return jsonify({'success': True, 'message': 'Status updated successfully'}), 200
 
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/technicians/<int:technician_id>/password', methods=['PUT'])
+def change_technician_password(technician_id):
+    """Change password for a technician using technician_id."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT user_id FROM technicians WHERE id = %s", (technician_id,))
+        tech = cursor.fetchone()
+        cursor.close()
+        connection.close()
+
+        if not tech:
+            return jsonify({'success': False, 'message': 'Technician not found'}), 404
+
+        return change_user_password(int(tech['user_id']))
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -6708,18 +6834,85 @@ def get_admin_reports_analytics():
         # Total complaints
         cursor.execute("SELECT COUNT(*) as count FROM complaints")
         analytics['total_complaints'] = cursor.fetchone()['count']
-        
-        # Pending complaints
-        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status IN ('pending', 'assigned', 'in_progress')")
+
+        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status = 'pending'")
         analytics['pending_complaints'] = cursor.fetchone()['count']
+
+        # Active = assigned + in_progress + delayed (all still open/being worked on)
+        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status IN ('assigned', 'in_progress', 'delayed')")
+        analytics['active_complaints'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status = 'delayed'")
+        analytics['delayed_complaints'] = cursor.fetchone()['count']
+
+        # Resolved complaints
+        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status IN ('resolved', 'closed')")
+        analytics['resolved_complaints'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM complaints WHERE status = 'cancelled'")
+        analytics['cancelled_complaints'] = cursor.fetchone()['count']
         
         # Total outpasses
         cursor.execute("SELECT COUNT(*) as count FROM outpasses")
         analytics['total_outpasses'] = cursor.fetchone()['count']
-        
-        # Active outpasses (approved)
-        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status = 'approved'")
+
+        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status IN ('pending', 'pending_otp')")
+        analytics['pending_outpasses'] = cursor.fetchone()['count']
+
+        # Approved = currently approved (including otp-approved, exited/out, overdue)
+        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status IN ('approved', 'approved_otp', 'exited', 'overdue')")
         analytics['active_outpasses'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status = 'returned'")
+        analytics['returned_outpasses'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status = 'overdue'")
+        analytics['overdue_outpasses'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM outpasses WHERE status = 'rejected'")
+        analytics['rejected_outpasses'] = cursor.fetchone()['count']
+
+        # Registration summary
+        cursor.execute("SELECT COUNT(*) as count FROM students")
+        analytics['total_registrations'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM students WHERE registration_status = 'pending'")
+        analytics['pending_registrations'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM students WHERE registration_status = 'approved'")
+        analytics['approved_registrations'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM students WHERE registration_status = 'rejected'")
+        analytics['rejected_registrations'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM students WHERE registration_status = 'approved' AND fee_status = 'paid'")
+        analytics['fees_paid_registrations'] = cursor.fetchone()['count']
+
+        # Leave activity summary
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests")
+        analytics['total_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'pending'")
+        analytics['pending_leaves'] = cursor.fetchone()['count']
+
+        # approved + active + completed are all leaves that were approved at some point
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status IN ('approved', 'active', 'completed')")
+        analytics['approved_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'active'")
+        analytics['active_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'completed'")
+        analytics['completed_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'rejected'")
+        analytics['rejected_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'cancelled'")
+        analytics['cancelled_leaves'] = cursor.fetchone()['count']
+
+        cursor.execute("SELECT COUNT(*) as count FROM leave_requests WHERE status = 'expired'")
+        analytics['expired_leaves'] = cursor.fetchone()['count']
         
         cursor.close()
         connection.close()
@@ -6732,27 +6925,50 @@ def get_admin_reports_analytics():
 
 @app.route('/api/admin/reports/room-occupancy-trend', methods=['GET'])
 def get_room_occupancy_trend():
-    """Get room occupancy trend over last 6 months"""
+    """Get year-wise room occupancy trend using year-end occupancy snapshot."""
     try:
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
 
         cursor = connection.cursor(dictionary=True)
-        
-        # Get total rooms and current occupancy
-        cursor.execute("SELECT COUNT(*) as total_rooms FROM rooms")
-        total_rooms = cursor.fetchone()['total_rooms']
-        
-        cursor.execute("SELECT SUM(occupied_count) as occupied FROM rooms")
-        occupied = cursor.fetchone()['occupied'] or 0
-        
-        # For now, return current occupancy percentage for each month
-        # In a real system, you'd track historical data
-        occupancy_percentage = round((occupied / total_rooms) * 100) if total_rooms > 0 else 0
-        
-        months = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan']
-        trend_data = [{'month': month, 'occupancy': occupancy_percentage} for month in months]
+
+        # Capacity (beds) based on current room capacities
+        cursor.execute("SELECT COALESCE(SUM(capacity), 0) AS total_capacity FROM rooms")
+        total_capacity = int((cursor.fetchone() or {}).get('total_capacity') or 0)
+
+        # Build year list from allocation history; fallback to last 5 years including current year
+        cursor.execute("SELECT MIN(YEAR(allocation_date)) AS min_year FROM room_allocations")
+        min_year_result = cursor.fetchone() or {}
+        current_year = datetime.now().year
+        min_year = min_year_result.get('min_year')
+
+        if min_year is None:
+            start_year = current_year - 4
+        else:
+            start_year = max(int(min_year), current_year - 7)
+
+        trend_data = []
+        for year in range(start_year, current_year + 1):
+            snapshot_date = f"{year}-12-31"
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS occupied
+                FROM room_allocations ra
+                WHERE ra.allocation_date <= %s
+                  AND (ra.checkout_date IS NULL OR ra.checkout_date > %s)
+                """,
+                (snapshot_date, snapshot_date)
+            )
+            occupied = int((cursor.fetchone() or {}).get('occupied') or 0)
+            occupancy = round((occupied / total_capacity) * 100, 2) if total_capacity > 0 else 0
+
+            trend_data.append({
+                'year': str(year),
+                'occupancy': min(occupancy, 100),
+                'occupied_beds': occupied,
+                'total_capacity': total_capacity
+            })
         
         cursor.close()
         connection.close()
@@ -6838,6 +7054,41 @@ def get_outpass_trend():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/admin/reports/leave-trend', methods=['GET'])
+def get_leave_trend():
+    """Get leave request trend over last 6 months"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        query = """
+            SELECT
+                DATE_FORMAT(created_at, '%b') as month,
+                COUNT(*) as count
+            FROM leave_requests
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY DATE_FORMAT(created_at, '%Y-%m'), DATE_FORMAT(created_at, '%b')
+            ORDER BY DATE_FORMAT(created_at, '%Y-%m')
+        """
+        cursor.execute(query)
+        results = cursor.fetchall()
+
+        if not results:
+            months = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan']
+            results = [{'month': month, 'count': 0} for month in months]
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': results}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/admin/hostel-blocks', methods=['GET'])
 def get_hostel_blocks():
     """Get all hostel blocks with room count information"""
@@ -6883,13 +7134,37 @@ def get_hostel_blocks():
 
 @app.route('/api/blocks', methods=['GET'])
 def get_blocks():
-    """Get all available blocks"""
+    """Get public block list with optional registration metadata"""
     try:
+        requested_gender = (request.args.get('gender') or '').strip().lower()
+        if requested_gender and requested_gender not in ['male', 'female']:
+            return jsonify({'success': False, 'message': 'Invalid gender filter'}), 400
+
         connection = get_db_connection()
         if not connection:
             return jsonify({'success': False, 'message': 'Database connection failed'}), 500
 
         cursor = connection.cursor(dictionary=True)
+
+        if requested_gender:
+            query = "SELECT * FROM blocks WHERE block_gender = %s ORDER BY block_name"
+            cursor.execute(query, (requested_gender,))
+            blocks = cursor.fetchall()
+
+            for block in blocks:
+                room_query = "SELECT COUNT(*) as total FROM rooms WHERE block_id = %s"
+                cursor.execute(room_query, (block['id'],))
+                room_result = cursor.fetchone()
+                block['total_rooms'] = room_result['total'] if room_result else 0
+
+                total_floors = block.get('total_floors') or 1
+                block['rooms_per_floor'] = (block['total_rooms'] // total_floors) if total_floors > 0 else 0
+
+            cursor.close()
+            connection.close()
+
+            return jsonify({'success': True, 'data': blocks}), 200
+
         query = "SELECT id, block_name as name FROM blocks ORDER BY block_name"
         cursor.execute(query)
         blocks = cursor.fetchall()
@@ -7434,15 +7709,27 @@ def get_all_users():
         if role:
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
-                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status,
-                    COALESCE(s.phone, w.phone, sp.phone) AS phone,
+                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status, s.registration_status,
+                    COALESCE(s.phone, w.phone, sp.phone, t.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
                     COALESCE(b.block_name, w.hostel_block) AS block,
+                    t.specialization AS specialization,
+                    t.employee_id AS employee_id,
+                    t.availability_status AS availability_status,
+                    t.phone AS technician_phone,
+                    COALESCE(tc.assigned_complaints, 0) AS assigned_complaints,
                     sp.employee_id AS security_employee_id,
                     sp.shift_timing, sp.gate_assigned, sp.phone AS security_phone
                 FROM users u
                 LEFT JOIN students s ON u.id = s.user_id
                 LEFT JOIN wardens w ON u.id = w.user_id
+                LEFT JOIN technicians t ON u.id = t.user_id
+                LEFT JOIN (
+                    SELECT assigned_technician_id, COUNT(*) AS assigned_complaints
+                    FROM complaints
+                    WHERE status IN ('assigned', 'in_progress')
+                    GROUP BY assigned_technician_id
+                ) tc ON tc.assigned_technician_id = u.id
                 LEFT JOIN rooms r ON s.room_id = r.id
                 LEFT JOIN blocks b ON r.block_id = b.id
                 LEFT JOIN security_personnel sp ON u.id = sp.user_id
@@ -7453,15 +7740,27 @@ def get_all_users():
         else:
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
-                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status,
-                    COALESCE(s.phone, w.phone, sp.phone) AS phone,
+                    s.roll_number, s.college_name, s.branch, s.year, s.fee_status, s.registration_status,
+                    COALESCE(s.phone, w.phone, sp.phone, t.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
                     COALESCE(b.block_name, w.hostel_block) AS block,
+                    t.specialization AS specialization,
+                    t.employee_id AS employee_id,
+                    t.availability_status AS availability_status,
+                    t.phone AS technician_phone,
+                    COALESCE(tc.assigned_complaints, 0) AS assigned_complaints,
                     sp.employee_id AS security_employee_id,
                     sp.shift_timing, sp.gate_assigned, sp.phone AS security_phone
                 FROM users u
                 LEFT JOIN students s ON u.id = s.user_id
                 LEFT JOIN wardens w ON u.id = w.user_id
+                LEFT JOIN technicians t ON u.id = t.user_id
+                LEFT JOIN (
+                    SELECT assigned_technician_id, COUNT(*) AS assigned_complaints
+                    FROM complaints
+                    WHERE status IN ('assigned', 'in_progress')
+                    GROUP BY assigned_technician_id
+                ) tc ON tc.assigned_technician_id = u.id
                 LEFT JOIN rooms r ON s.room_id = r.id
                 LEFT JOIN blocks b ON r.block_id = b.id
                 LEFT JOIN security_personnel sp ON u.id = sp.user_id
@@ -7493,6 +7792,10 @@ def create_user():
         password = data.get('password', 'default123')  # Default password
         role = data.get('role')
         phone = data.get('phone')
+        specialization = data.get('specialization') or data.get('category')
+        employee_id = data.get('employee_id') or data.get('employeeId') or data.get('staffId')
+        availability_status = data.get('availability_status') or 'available'
+        generated_staff_id = None
         
         # Student-specific fields
         roll_number = data.get('roll_number')
@@ -7528,10 +7831,11 @@ def create_user():
         
         user_id = cursor.lastrowid
         
-        # Generate staff_id for non-admin staff roles
+        # Generate staff_id for staff roles and enforce non-null + uniqueness.
         if role in ['warden', 'technician', 'security']:
-            staff_id = generate_staff_id(role, connection)
-            cursor.execute("UPDATE users SET staff_id = %s WHERE id = %s", (staff_id, user_id))
+            generated_staff_id = ensure_role_staff_id(cursor, connection, user_id, role)
+            if not generated_staff_id:
+                return jsonify({'success': False, 'message': f'Failed to assign staff ID for {role}'}), 500
             connection.commit()
         
         # If role is student, create student record
@@ -7551,16 +7855,41 @@ def create_user():
 
             cursor.execute(
                 """
-                INSERT INTO wardens (user_id, hostel_block, phone)
-                VALUES (%s, %s, %s)
+                INSERT INTO wardens (user_id, employee_id, hostel_block, phone)
+                VALUES (%s, %s, %s, %s)
                 """,
-                (user_id, block, phone)
+                (user_id, generated_staff_id, block, phone)
+            )
+            connection.commit()
+        elif role == 'technician':
+            if not specialization:
+                return jsonify({'success': False, 'message': 'Specialization required for technician'}), 400
+            if not phone:
+                return jsonify({'success': False, 'message': 'Phone number required for technician'}), 400
+
+            technician_employee_id = employee_id or generated_staff_id
+            if not technician_employee_id:
+                return jsonify({'success': False, 'message': 'Failed to generate staff ID for technician'}), 500
+
+            cursor.execute("SELECT id FROM technicians WHERE employee_id = %s", (technician_employee_id,))
+            if cursor.fetchone():
+                return jsonify({'success': False, 'message': 'Employee ID already exists'}), 409
+
+            cursor.execute(
+                """
+                INSERT INTO technicians (user_id, employee_id, specialization, phone, availability_status)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (user_id, technician_employee_id, specialization, phone, availability_status)
             )
             connection.commit()
         elif role == 'security':
             shift = data.get('shift')
             gate = data.get('gate')
-            staff_id = data.get('staffId') or data.get('employeeId')
+            security_employee_id = data.get('staffId') or data.get('employeeId') or generated_staff_id
+
+            if not security_employee_id:
+                return jsonify({'success': False, 'message': 'Failed to generate staff ID for security staff'}), 500
 
             if not phone:
                 return jsonify({'success': False, 'message': 'Phone number required for security staff'}), 400
@@ -7570,7 +7899,7 @@ def create_user():
                 (user_id, employee_id, shift_timing, gate_assigned, phone)
                 VALUES (%s, %s, %s, %s, %s)
             """
-            cursor.execute(insert_security_query, (user_id, staff_id, shift, gate, phone))
+            cursor.execute(insert_security_query, (user_id, security_employee_id, shift, gate, phone))
             connection.commit()
         
         cursor.close()
@@ -7663,19 +7992,51 @@ def change_user_password(user_id):
         
         cursor = connection.cursor(dictionary=True)
         
-        # Check if user exists
-        cursor.execute("SELECT id, name, email FROM users WHERE id = %s", (user_id,))
+        # Check if user exists and load identifiers used by login lockout tracking.
+        cursor.execute(
+            """
+            SELECT
+                u.id,
+                u.name,
+                u.email,
+                u.staff_id,
+                COALESCE(NULLIF(u.roll_number, ''), s.roll_number) AS roll_number
+            FROM users u
+            LEFT JOIN students s ON s.user_id = u.id
+            WHERE u.id = %s
+            """,
+            (user_id,)
+        )
         user = cursor.fetchone()
         
         if not user:
             cursor.close()
             connection.close()
             return jsonify({'success': False, 'message': 'User not found'}), 404
+
+        # Enforce unique/non-null staff IDs for staff roles, including legacy rows.
+        try:
+            user['staff_id'] = ensure_role_staff_id(
+                cursor,
+                connection,
+                user_id,
+                user['role'],
+                user.get('staff_id')
+            )
+        except ValueError as staff_error:
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'message': str(staff_error)}), 409
         
         # Hash and update password
         hashed_password = generate_password_hash(new_password)
         cursor.execute("UPDATE users SET password = %s WHERE id = %s", (hashed_password, user_id))
         connection.commit()
+
+        # Password reset should unblock immediate login attempts for this account.
+        for identifier in [user.get('email'), user.get('roll_number'), user.get('staff_id')]:
+            if identifier:
+                clear_failed_login(str(identifier).strip().lower())
         
         cursor.close()
         connection.close()
@@ -7702,14 +8063,29 @@ def update_user_details(user_id):
         cursor = connection.cursor(dictionary=True)
         
         # Check if user exists and get role
-        cursor.execute("SELECT id, name, role FROM users WHERE id = %s", (user_id,))
+        cursor.execute("SELECT id, name, role, staff_id FROM users WHERE id = %s", (user_id,))
         user = cursor.fetchone()
         
         if not user:
             cursor.close()
             connection.close()
             return jsonify({'success': False, 'message': 'User not found'}), 404
-        
+
+        # Enforce unique/non-null staff IDs for staff roles, including legacy rows.
+        if user['role'] in ('warden', 'technician', 'security'):
+            try:
+                user['staff_id'] = ensure_role_staff_id(
+                    cursor,
+                    connection,
+                    user_id,
+                    user['role'],
+                    user.get('staff_id')
+                )
+            except ValueError as staff_error:
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': str(staff_error)}), 409
+
         # Update users table
         name = data.get('name')
         email = data.get('email')
@@ -7845,16 +8221,54 @@ def update_user_details(user_id):
             elif block or phone:
                 cursor.execute(
                     """
-                    INSERT INTO wardens (user_id, hostel_block, phone)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO wardens (user_id, employee_id, hostel_block, phone)
+                    VALUES (%s, %s, %s, %s)
                     """,
-                    (user_id, block, phone)
+                    (user_id, user['staff_id'], block, phone)
                 )
+        elif user['role'] == 'technician':
+            specialization = data.get('specialization') or data.get('category')
+            availability_status = data.get('availability_status')
+
+            cursor.execute("SELECT id FROM technicians WHERE user_id = %s", (user_id,))
+            technician = cursor.fetchone()
+
+            if technician:
+                technician_update = "UPDATE technicians SET "
+                technician_params = []
+
+                if specialization:
+                    technician_update += "specialization = %s, "
+                    technician_params.append(specialization)
+                if phone:
+                    technician_update += "phone = %s, "
+                    technician_params.append(phone)
+                if availability_status:
+                    technician_update += "availability_status = %s, "
+                    technician_params.append(availability_status)
+
+                if technician_params:
+                    technician_update = technician_update.rstrip(', ') + " WHERE user_id = %s"
+                    technician_params.append(user_id)
+                    cursor.execute(technician_update, technician_params)
+            else:
+                if phone:
+                    technician_employee_id = user.get('staff_id') or data.get('employee_id') or data.get('employeeId') or data.get('staffId')
+                    if not technician_employee_id:
+                        cursor.close()
+                        connection.close()
+                        return jsonify({'success': False, 'message': 'Staff ID missing for technician'}), 400
+                    cursor.execute(
+                        """
+                        INSERT INTO technicians (user_id, employee_id, specialization, phone, availability_status)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (user_id, technician_employee_id, specialization, phone, availability_status or 'available')
+                    )
         elif user['role'] == 'security':
             # Update security_personnel table if needed
             gate = data.get('gate')
             shift = data.get('shift')
-            staff_id = data.get('staffId') or data.get('employeeId')
 
             cursor.execute("SELECT id FROM security_personnel WHERE user_id = %s", (user_id,))
             security_row = cursor.fetchone()
@@ -7863,9 +8277,6 @@ def update_user_details(user_id):
                 security_update = "UPDATE security_personnel SET "
                 security_params = []
 
-                if staff_id:
-                    security_update += "employee_id = %s, "
-                    security_params.append(staff_id)
                 if shift:
                     security_update += "shift_timing = %s, "
                     security_params.append(shift)
@@ -7882,13 +8293,18 @@ def update_user_details(user_id):
                     cursor.execute(security_update, security_params)
             else:
                 # Create security personnel record if missing
-                if phone or gate or shift or staff_id:
+                if phone or gate or shift:
+                    security_employee_id = user.get('staff_id') or data.get('staffId') or data.get('employeeId')
+                    if not security_employee_id:
+                        cursor.close()
+                        connection.close()
+                        return jsonify({'success': False, 'message': 'Staff ID missing for security staff'}), 400
                     cursor.execute(
                         """
                         INSERT INTO security_personnel (user_id, employee_id, shift_timing, gate_assigned, phone)
                         VALUES (%s, %s, %s, %s, %s)
                         """,
-                        (user_id, staff_id, shift, gate, phone)
+                        (user_id, security_employee_id, shift, gate, phone)
                     )
         
         connection.commit()
@@ -8458,16 +8874,30 @@ def approve_registration(student_id):
         
         # Helper function to map floor preference to floor number
         def get_floor_number(floor_preference):
-            """Convert floor preference text to floor number"""
+            """Convert floor preference text to floor number (robust)"""
+            if not floor_preference:
+                return None
             floor_map = {
-                'Ground Floor': 0,
-                '1st Floor': 1,
-                '2nd Floor': 2,
-                '3rd Floor': 3,
-                '4th Floor': 4,
-                '5th Floor': 5
+                'ground floor': 0,
+                '0': 0,
+                '1st floor': 1,
+                'first floor': 1,
+                '1': 1,
+                '2nd floor': 2,
+                'second floor': 2,
+                '2': 2,
+                '3rd floor': 3,
+                'third floor': 3,
+                '3': 3,
+                '4th floor': 4,
+                'fourth floor': 4,
+                '4': 4,
+                '5th floor': 5,
+                'fifth floor': 5,
+                '5': 5
             }
-            return floor_map.get(floor_preference)
+            key = str(floor_preference).strip().lower()
+            return floor_map.get(key)
         
         # Helper function to allocate room
         def allocate_room(room_data, block_name=None):
@@ -8514,16 +8944,20 @@ def approve_registration(student_id):
         
         # Strategy 1: Try preferred block + floor
         if student.get('preferred_block') and student.get('floor_preference'):
+            preferred_block = str(student['preferred_block']).strip().lower()
+            floor_pref = student['floor_preference']
+            floor_number = get_floor_number(floor_pref)
+            print(f"[DEBUG] Preferred block: '{preferred_block}', Floor preference: '{floor_pref}', Floor number: {floor_number}")
             cursor.execute(
-                "SELECT id FROM blocks WHERE block_name = %s",
-                (student['preferred_block'],)
+                "SELECT id, block_name FROM blocks WHERE LOWER(TRIM(block_name)) = %s",
+                (preferred_block,)
             )
             block = cursor.fetchone()
             if block:
-                floor_number = get_floor_number(student['floor_preference'])
+                print(f"[DEBUG] Block found: {block}")
                 if floor_number is not None:
                     cursor.execute("""
-                        SELECT r.id, r.room_number, r.capacity, r.occupied_count, b.block_name
+                        SELECT r.id, r.room_number, r.capacity, r.occupied_count, b.block_name, r.floor
                         FROM rooms r
                         JOIN blocks b ON r.block_id = b.id
                         WHERE r.block_id = %s 
@@ -8534,8 +8968,11 @@ def approve_registration(student_id):
                         LIMIT 1
                     """, (block['id'], floor_number))
                     preferred_room = cursor.fetchone()
+                    print(f"[DEBUG] Preferred room query result: {preferred_room}")
                     if preferred_room:
-                        allocated_room_id, allocation_message = allocate_room(preferred_room, student['preferred_block'])
+                        allocated_room_id, allocation_message = allocate_room(preferred_room, block['block_name'])
+            else:
+                print(f"[DEBUG] No block found for preferred_block: '{preferred_block}'")
 
         # Strategy 2: Serialized allocation - first available room in order
         if not allocated_room_id:
@@ -8645,6 +9082,194 @@ def reject_registration(student_id):
 # ========================================
 # TECHNICIAN ENDPOINTS
 # ========================================
+
+# ========================================
+# WARDEN REGISTRATION APPROVAL/REJECTION ENDPOINTS
+# ========================================
+
+@app.route('/api/warden/registrations/<int:student_id>/approve', methods=['PUT'])
+def warden_approve_registration(student_id):
+    """Warden approves a student registration and auto-allocates room based on preferences"""
+    try:
+        data = request.get_json() or {}
+        fee_status = data.get('fee_status', 'pending')
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+        # Check if student exists and fetch email + preferences
+        cursor.execute("""
+            SELECT s.id, s.user_id, s.preferred_block, s.room_preference, s.floor_preference, u.email, u.name 
+            FROM students s 
+            JOIN users u ON s.user_id = u.id 
+            WHERE s.id = %s
+        """, (student_id,))
+        student = cursor.fetchone()
+        if not student:
+            return jsonify({'success': False, 'message': 'Student not found'}), 404
+
+        def get_floor_number(floor_preference):
+            if not floor_preference:
+                return None
+            floor_map = {
+                'ground floor': 0,
+                '0': 0,
+                '1st floor': 1,
+                'first floor': 1,
+                '1': 1,
+                '2nd floor': 2,
+                'second floor': 2,
+                '2': 2,
+                '3rd floor': 3,
+                'third floor': 3,
+                '3': 3,
+                '4th floor': 4,
+                'fourth floor': 4,
+                '4': 4,
+                '5th floor': 5,
+                'fifth floor': 5,
+                '5': 5
+            }
+            key = str(floor_preference).strip().lower()
+            return floor_map.get(key)
+
+        def allocate_room(room_data, block_name=None):
+            if not room_data:
+                return None, ' No available rooms. Manual allocation required.'
+            room_id = room_data['id']
+            cursor.execute(
+                "UPDATE students SET room_id = %s WHERE id = %s",
+                (room_id, student_id)
+            )
+            new_occupied = room_data['occupied_count'] + 1
+            cursor.execute(
+                "UPDATE rooms SET occupied_count = %s WHERE id = %s",
+                (new_occupied, room_id)
+            )
+            if new_occupied >= room_data['capacity']:
+                cursor.execute(
+                    "UPDATE rooms SET status = 'full' WHERE id = %s",
+                    (room_id,)
+                )
+            cursor.execute("""
+                INSERT INTO room_allocations 
+                (student_id, room_id, allocation_date, status)
+                VALUES (%s, %s, CURDATE(), 'active')
+            """, (student_id, room_id))
+            block_name = block_name or room_data.get('block_name', 'Unknown')
+            message = f' Room {room_data["room_number"]} in {block_name} allocated.'
+            return room_id, message
+
+        allocated_room_id = None
+        allocation_message = ''
+        if student.get('preferred_block') and student.get('floor_preference'):
+            preferred_block = str(student['preferred_block']).strip().lower()
+            floor_pref = student['floor_preference']
+            floor_number = get_floor_number(floor_pref)
+            print(f"[DEBUG] Preferred block: '{preferred_block}', Floor preference: '{floor_pref}', Floor number: {floor_number}")
+            cursor.execute(
+                "SELECT id, block_name FROM blocks WHERE LOWER(TRIM(block_name)) = %s",
+                (preferred_block,)
+            )
+            block = cursor.fetchone()
+            if block:
+                print(f"[DEBUG] Block found: {block}")
+                if floor_number is not None:
+                    cursor.execute("""
+                        SELECT r.id, r.room_number, r.capacity, r.occupied_count, b.block_name, r.floor
+                        FROM rooms r
+                        JOIN blocks b ON r.block_id = b.id
+                        WHERE r.block_id = %s 
+                          AND r.floor = %s
+                          AND r.occupied_count < r.capacity 
+                          AND r.status = 'available'
+                        ORDER BY r.room_number
+                        LIMIT 1
+                    """, (block['id'], floor_number))
+                    preferred_room = cursor.fetchone()
+                    print(f"[DEBUG] Preferred room query result: {preferred_room}")
+                    if preferred_room:
+                        allocated_room_id, allocation_message = allocate_room(preferred_room, block['block_name'])
+            else:
+                print(f"[DEBUG] No block found for preferred_block: '{preferred_block}'")
+        if not allocated_room_id:
+            cursor.execute("""
+                SELECT r.id, r.room_number, r.capacity, r.occupied_count, r.floor, b.block_name
+                FROM rooms r
+                JOIN blocks b ON r.block_id = b.id
+                WHERE r.occupied_count < r.capacity 
+                  AND r.status = 'available'
+                ORDER BY b.block_name, r.floor, r.room_number
+                LIMIT 1
+            """)
+            serialized_room = cursor.fetchone()
+            if serialized_room:
+                allocated_room_id, msg = allocate_room(serialized_room)
+                allocation_message = msg + ' (preferences unavailable, allocated serially)'
+            else:
+                allocation_message = ' No available rooms. Manual allocation required.'
+        cursor.execute(
+            "UPDATE students SET registration_status = 'approved', fee_status = %s WHERE id = %s", 
+            (fee_status, student_id)
+        )
+        cursor.execute(
+            "UPDATE users SET status = 'active' WHERE id = %s", 
+            (student['user_id'],)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        send_approval_email(student['email'], student['name'])
+        return jsonify({
+            'success': True, 
+            'message': 'Registration approved successfully.' + allocation_message,
+            'room_allocated': allocated_room_id is not None
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/warden/registrations/<int:student_id>/reject', methods=['PUT'])
+def warden_reject_registration(student_id):
+    """Warden rejects a student registration"""
+    try:
+        data = request.get_json()
+        rejection_reason = data.get('rejection_reason', 'No reason provided')
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT s.id, s.user_id, u.email, u.name 
+            FROM students s 
+            JOIN users u ON s.user_id = u.id 
+            WHERE s.id = %s
+        """, (student_id,))
+        student = cursor.fetchone()
+        if not student:
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'message': 'Student not found'}), 404
+        cursor.execute("""
+            UPDATE students 
+            SET registration_status = 'rejected', address = %s 
+            WHERE id = %s
+        """, (f"Rejection Reason: {rejection_reason}", student_id))
+        cursor.execute(
+            "UPDATE users SET status = 'inactive' WHERE id = %s", 
+            (student['user_id'],)
+        )
+        connection.commit()
+        cursor.close()
+        connection.close()
+        send_rejection_email(student['email'], student['name'], rejection_reason)
+        return jsonify({
+            'success': True, 
+            'message': 'Registration rejected successfully'
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/technician/complaints/pending', methods=['GET'])
 def get_pending_complaints():
@@ -8928,6 +9553,36 @@ def create_visitor_entry():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/security/students', methods=['GET'])
+def get_security_students():
+    """Get active students for security visitor entry lookup."""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+
+        cursor = connection.cursor(dictionary=True)
+
+        query = """
+            SELECT s.id, u.name, s.roll_number, r.room_number
+            FROM students s
+            JOIN users u ON s.user_id = u.id
+            LEFT JOIN rooms r ON s.room_id = r.id
+            WHERE u.status = 'active'
+            ORDER BY u.name ASC
+        """
+        cursor.execute(query)
+        students = cursor.fetchall()
+
+        cursor.close()
+        connection.close()
+
+        return jsonify({'success': True, 'data': students}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/security/visitors/active', methods=['GET'])
 def get_active_visitors():
     """Get active visitors inside hostel"""
@@ -8939,10 +9594,11 @@ def get_active_visitors():
         cursor = connection.cursor(dictionary=True)
         
         query = """
-            SELECT v.*, u.name as student_name, st.roll_number
+            SELECT v.*, u.name as student_name, st.roll_number, r.room_number
             FROM visitors v
             JOIN students st ON v.student_id = st.id
             JOIN users u ON st.user_id = u.id
+            LEFT JOIN rooms r ON st.room_id = r.id
             WHERE v.status = 'inside'
             ORDER BY v.entry_time DESC
         """
@@ -8970,10 +9626,11 @@ def checkout_visitor(visitor_id):
         
         # Get visitor details with student info
         cursor.execute("""
-            SELECT v.*, u.name as student_name, s.roll_number
+            SELECT v.*, u.name as student_name, s.roll_number, r.room_number
             FROM visitors v
             JOIN students s ON v.student_id = s.id
             JOIN users u ON s.user_id = u.id
+            LEFT JOIN rooms r ON s.room_id = r.id
             WHERE v.id = %s
         """, (visitor_id,))
         visitor = cursor.fetchone()
@@ -8989,14 +9646,17 @@ def checkout_visitor(visitor_id):
         cursor.execute(query, (visitor_id,))
         connection.commit()
         
+        room_number = visitor.get('room_number') or 'N/A'
+
         # Create security log
         create_security_log(
             activity_type='visitor',
-            description=f"Visitor {visitor['visitor_name']} marked as exited. Visited student: {visitor['student_name']} ({visitor['roll_number']}). Room: {visitor['room_number']}",
+            description=f"Visitor {visitor['visitor_name']} marked as exited. Visited student: {visitor['student_name']} ({visitor['roll_number']}). Room: {room_number}",
             related_visitor_id=visitor_id,
             related_student_id=visitor['student_id'],
             severity='low',
-            location=f"Room {visitor['room_number']}",
+            location=f"Room {room_number}",
+            logged_by=visitor.get('security_guard_id'),
             action_taken=f"Visitor exit recorded"
         )
         
@@ -9020,10 +9680,11 @@ def get_visitor_history():
         cursor = connection.cursor(dictionary=True)
         
         query = """
-            SELECT v.*, u.name as student_name, st.roll_number
+            SELECT v.*, u.name as student_name, st.roll_number, r.room_number
             FROM visitors v
             JOIN students st ON v.student_id = st.id
             JOIN users u ON st.user_id = u.id
+            LEFT JOIN rooms r ON st.room_id = r.id
             WHERE v.status IN ('exited', 'overstayed')
             ORDER BY v.exit_time DESC
             LIMIT 50

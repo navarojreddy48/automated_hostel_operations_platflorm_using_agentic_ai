@@ -85,7 +85,7 @@ const StudentRegistration = () => {
     const fetchHostelBlocks = async () => {
       setLoadingBlocks(true);
       try {
-        const response = await fetch(`http://localhost:5000/api/admin/hostel-blocks?gender=${selectedGender}`);
+        const response = await fetch(`http://localhost:5000/api/blocks?gender=${selectedGender}`);
         const data = await response.json();
 
         if (data.success && Array.isArray(data.data)) {
@@ -169,6 +169,51 @@ const StudentRegistration = () => {
     if (e) {
       e.preventDefault();
     }
+
+    if (currentStep === 1) {
+      if (!formData.fullName || !formData.email || !formData.phone || !formData.password ||
+          !formData.confirmPassword || !formData.rollNumber || !formData.collegeName ||
+          !formData.branch || !formData.year || !formData.gender || !formData.parentName ||
+          !formData.parentPhone || !formData.parentEmail) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      if (formData.collegeName === 'Other' && !formData.collegeOther.trim()) {
+        alert('Please specify your college name');
+        return;
+      }
+
+      if (formData.password !== formData.confirmPassword) {
+        alert('Passwords do not match');
+        return;
+      }
+
+      if (formData.password.length < 6) {
+        alert('Password must be at least 6 characters long');
+        return;
+      }
+
+      if (!['male', 'female'].includes((formData.gender || '').toLowerCase())) {
+        alert('Please select a valid gender (Male or Female)');
+        return;
+      }
+    }
+
+    if (currentStep === 2) {
+      if (!formData.hostelBlock) {
+        alert('Please select a hostel block to continue');
+        return;
+      }
+    }
+
+    if (currentStep === 3) {
+      if (!formData.feeAmount || !formData.paymentMode || !formData.transactionId || !formData.paymentDate) {
+        alert('Please complete the fee payment details');
+        return;
+      }
+    }
+
     if (currentStep < 4) {
       setCurrentStep(currentStep + 1);
       window.scrollTo(0, 0);

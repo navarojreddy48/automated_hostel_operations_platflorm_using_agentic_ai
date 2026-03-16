@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getAuthHeaders } from '../../utils/auth';
 import '../../styles/warden-complaints.css';
 
 const WardenComplaints = () => {
@@ -22,7 +23,9 @@ const WardenComplaints = () => {
 
   const fetchComplaints = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/warden/complaints/all');
+      const response = await fetch('http://localhost:5000/api/warden/complaints/all', {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       if (data.success) {
         setComplaints(data.data);
@@ -36,7 +39,9 @@ const WardenComplaints = () => {
 
   const fetchTechnicians = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/warden/technicians');
+      const response = await fetch('http://localhost:5000/api/warden/technicians', {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       if (data.success) {
         setTechnicians(data.data);
@@ -158,7 +163,7 @@ const WardenComplaints = () => {
 
   if (loading) {
     return (
-      <div className="warden-main">
+      <div className="complaints-main">
         <div className="loading-state">
           <div className="loading-spinner"></div>
           <p>Loading complaints...</p>
@@ -168,11 +173,13 @@ const WardenComplaints = () => {
   }
 
   return (
-    <div className="warden-main">
+    <div className="complaints-main">
       {/* Page Header */}
-      <div className="complaints-header">
-        <h1>Student Complaints</h1>
-        <p className="complaints-subtitle">Monitor and manage student complaints</p>
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Student Complaints</h2>
+          <p>Monitor and manage student complaints</p>
+        </div>
       </div>
 
       {/* Filter Buttons */}

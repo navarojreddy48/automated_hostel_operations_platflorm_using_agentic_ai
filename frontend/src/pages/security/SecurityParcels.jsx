@@ -23,6 +23,7 @@ const SecurityParcels = () => {
   const [newParcel, setNewParcel] = useState(buildDefaultParcel);
   const [addingParcel, setAddingParcel] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  const [statusFilter, setStatusFilter] = useState('all');
   const [alertModal, setAlertModal] = useState({
     open: false,
     title: '',
@@ -32,6 +33,20 @@ const SecurityParcels = () => {
   useEffect(() => {
     fetchParcels();
   }, []);
+
+  useEffect(() => {
+    const hasOpenModal = showDetails || showAddForm || alertModal.open;
+
+    if (hasOpenModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDetails, showAddForm, alertModal.open]);
 
   const openAlertModal = (title, message) => {
     setAlertModal({ open: true, title, message });
@@ -77,7 +92,7 @@ const SecurityParcels = () => {
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/security/parcels?roll_number=${searchRollNumber.trim()}`
+        `http://localhost:5000/api/security/parcels?roll_number=${encodeURIComponent(searchRollNumber.trim())}`
       );
       const data = await response.json();
       if (data.success) {
@@ -217,18 +232,30 @@ const SecurityParcels = () => {
 
   const normalizedSearch = searchRollNumber.trim().toLowerCase();
   const filteredParcels = parcels.filter((parcel) => {
-    if (!normalizedSearch) return true;
+    const status = (parcel.status || 'received').toLowerCase();
+    const statusMatches = statusFilter === 'all' || status === statusFilter;
+
+    if (!normalizedSearch) return statusMatches;
 
     const rollNumber = (parcel.roll_number || '').toLowerCase();
     const studentName = (parcel.student_name || '').toLowerCase();
     const trackingNumber = (parcel.tracking_number || '').toLowerCase();
 
-    return (
+    const searchMatches = (
       rollNumber.includes(normalizedSearch) ||
       studentName.includes(normalizedSearch) ||
       trackingNumber.includes(normalizedSearch)
     );
+
+    return statusMatches && searchMatches;
   });
+
+  const statusTotals = {
+    total: parcels.length,
+    received: parcels.filter((item) => !item.status || item.status.toLowerCase() === 'received').length,
+    notified: parcels.filter((item) => item.status?.toLowerCase() === 'notified').length,
+    collected: parcels.filter((item) => item.status?.toLowerCase() === 'collected').length
+  };
 
   return (
     <>
@@ -247,18 +274,72 @@ const SecurityParcels = () => {
         </div>
       </header>
 
+      <section className="parcel-summary-cards">
+        <div className="parcel-summary-card">
+          <span className="card-label">Total</span>
+          <strong className="card-value">{statusTotals.total}</strong>
+          <span className="card-subtitle">All parcels in queue</span>
+        </div>
+        <div className="parcel-summary-card parcel-summary-received">
+          <span className="card-label">Received</span>
+          <strong className="card-value">{statusTotals.received}</strong>
+          <span className="card-subtitle">Awaiting notification</span>
+        </div>
+        <div className="parcel-summary-card parcel-summary-notified">
+          <span className="card-label">Notified</span>
+          <strong className="card-value">{statusTotals.notified}</strong>
+          <span className="card-subtitle">Ready for collection</span>
+        </div>
+        <div className="parcel-summary-card parcel-summary-collected">
+          <span className="card-label">Collected</span>
+          <strong className="card-value">{statusTotals.collected}</strong>
+          <span className="card-subtitle">Completed pickups</span>
+        </div>
+      </section>
+
+      <section className="parcel-controls-card">
+        <div className="parcel-search-row">
+          <input
+            className="filter-input"
+            type="text"
+            placeholder="Search by roll number, student, or tracking number"
+            value={searchRollNumber}
+            onChange={(e) => setSearchRollNumber(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearchRollNumber();
+              }
+            }}
+          />
+          <div className="parcel-search-actions">
+            <button className="btn-action primary" onClick={handleSearchRollNumber}>Search</button>
+          </div>
+        </div>
+
+        <div className="parcel-status-filter">
+          <label className="filter-label">Status</label>
+          <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="all">All</option>
+            <option value="received">Received</option>
+            <option value="notified">Notified</option>
+            <option value="collected">Collected</option>
+          </select>
+        </div>
+      </section>
+
       {showAddForm && (
-        <div className="modal-overlay" onClick={() => setShowAddForm(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay parcel-modal-overlay" onClick={() => setShowAddForm(false)}>
+          <div className="modal-content parcel-modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Log New Parcel</h2>
               <button className="modal-close" onClick={() => setShowAddForm(false)}>×</button>
             </div>
             <div className="modal-body">
-              <form onSubmit={handleAddParcel}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Student Roll Number *</label>
+              <form className="parcel-form-modal" onSubmit={handleAddParcel}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Student Roll Number *</label>
                     <input 
                       type="text"
                       name="roll_number"
@@ -266,11 +347,10 @@ const SecurityParcels = () => {
                       value={newParcel.roll_number}
                       onChange={handleNewParcelChange}
                       required
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Courier Name *</label>
+                  <div className="form-group">
+                    <label>Courier Name *</label>
                     <input 
                       type="text"
                       name="courier_name"
@@ -278,44 +358,40 @@ const SecurityParcels = () => {
                       value={newParcel.courier_name}
                       onChange={handleNewParcelChange}
                       required
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Sender Name</label>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Sender Name</label>
                     <input 
                       type="text"
                       name="sender_name"
                       placeholder="Optional"
                       value={newParcel.sender_name}
                       onChange={handleNewParcelChange}
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Sender Contact</label>
+                  <div className="form-group">
+                    <label>Sender Contact</label>
                     <input 
                       type="text"
                       name="sender_contact"
                       placeholder="Optional"
                       value={newParcel.sender_contact}
                       onChange={handleNewParcelChange}
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Parcel Type</label>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Parcel Type</label>
                     <select 
                       name="parcel_type"
                       value={newParcel.parcel_type}
                       onChange={handleNewParcelChange}
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     >
                       <option value="package">Package</option>
                       <option value="document">Document</option>
@@ -323,39 +399,36 @@ const SecurityParcels = () => {
                       <option value="other">Other</option>
                     </select>
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Tracking Number</label>
+                  <div className="form-group">
+                    <label>Tracking Number</label>
                     <input 
                       type="text"
                       name="tracking_number"
                       placeholder="Optional"
                       value={newParcel.tracking_number}
                       onChange={handleNewParcelChange}
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '15px', marginBottom: '15px' }}>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Received Date</label>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Received Date</label>
                     <input 
                       type="date"
                       name="received_date"
                       value={newParcel.received_date}
                       onChange={handleNewParcelChange}
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
                     />
                   </div>
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Remarks</label>
+                  <div className="form-group wide">
+                    <label>Remarks</label>
                     <textarea 
                       name="remarks"
                       placeholder="Optional notes about the parcel"
                       value={newParcel.remarks}
                       onChange={handleNewParcelChange}
                       rows="2"
-                      style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px', fontFamily: 'inherit' }}
                     />
                   </div>
                 </div>
@@ -390,7 +463,10 @@ const SecurityParcels = () => {
         </div>
       )}
 
-          {filteredParcels.length > 0 ? (
+          {loading ? (
+            <div className="outpass-loading">Loading parcels...</div>
+          ) : filteredParcels.length > 0 ? (
+            <>
             <section className="parcel-table">
               <table>
                 <thead>
@@ -454,6 +530,58 @@ const SecurityParcels = () => {
                 </tbody>
               </table>
             </section>
+
+            <section className="parcel-cards-mobile">
+              {filteredParcels.map((parcel) => (
+                <article key={`mobile-${parcel.id}`} className="parcel-card-mobile">
+                  <div className="parcel-card-head">
+                    <div>
+                      <div className="student-name">{parcel.student_name}</div>
+                      <div className="student-id">{parcel.roll_number}</div>
+                    </div>
+                    <span className={`status-badge ${getStatusClass(parcel.status)}`}>
+                      {parcel.status?.charAt(0).toUpperCase() + parcel.status?.slice(1) || 'Received'}
+                    </span>
+                  </div>
+
+                  <div className="parcel-card-grid">
+                    <div><span>Parcel ID</span><strong>#{parcel.id}</strong></div>
+                    <div><span>Courier</span><strong>{parcel.courier || 'Not specified'}</strong></div>
+                    <div><span>Block</span><strong>{parcel.display_block || parcel.block_name || parcel.preferred_block || 'Not Assigned'}</strong></div>
+                    <div><span>Room</span><strong>{parcel.display_room || parcel.room_number || 'Pending Assignment'}</strong></div>
+                  </div>
+
+                  <div className="parcel-card-time">
+                    {parcel.received_date ? new Date(parcel.received_date).toLocaleString() : parcel.received_at || '—'}
+                  </div>
+
+                  <div className="action-buttons">
+                    <button className="btn-action" onClick={() => handleViewDetails(parcel)}>View Details</button>
+                    {(!parcel.status || parcel.status === 'received') && (
+                      <button
+                        className="btn-action primary"
+                        onClick={() => handleMarkNotified(parcel.id)}
+                        disabled={actionLoading[`notify-${parcel.id}`]}
+                      >
+                        {actionLoading[`notify-${parcel.id}`] && <span className="btn-spinner" />}
+                        Mark Notified
+                      </button>
+                    )}
+                    {parcel.status === 'notified' && (
+                      <button
+                        className="btn-action primary"
+                        onClick={() => handleMarkCollected(parcel.id)}
+                        disabled={actionLoading[`collect-${parcel.id}`]}
+                      >
+                        {actionLoading[`collect-${parcel.id}`] && <span className="btn-spinner" />}
+                        Mark Collected
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </section>
+            </>
           ) : (
             <div className="empty-state">
               <span className="empty-icon">📦</span>
@@ -464,37 +592,41 @@ const SecurityParcels = () => {
           )}
 
       {showDetails && selectedParcel && (
-        <div className="modal-overlay" onClick={closeDetails}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-overlay parcel-modal-overlay" onClick={closeDetails}>
+          <div className="modal-content parcel-details-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header parcel-details-header">
               <h2>Parcel Details</h2>
               <button className="modal-close" onClick={closeDetails}>×</button>
             </div>
-            <div className="modal-body">
-              <div className="details-grid">
-                <div>
+            <div className="modal-body parcel-details-body">
+              <div className="parcel-details-grid">
+                <div className="parcel-detail-card">
                   <div className="detail-label">Student</div>
                   <div className="detail-value">{selectedParcel.student_name}</div>
                   <div className="detail-sub">{selectedParcel.roll_number}</div>
                 </div>
-                <div>
+                <div className="parcel-detail-card">
                   <div className="detail-label">Block</div>
                   <div className="detail-value">{selectedParcel.display_block || selectedParcel.block_name || selectedParcel.preferred_block || 'Not Assigned'}</div>
                   <div className="detail-sub">Preferred block shown when not allocated</div>
                 </div>
-                <div>
+                <div className="parcel-detail-card">
                   <div className="detail-label">Room</div>
                   <div className="detail-value">{selectedParcel.display_room || selectedParcel.room_number || 'Pending Assignment'}</div>
                   <div className="detail-sub">ID: {selectedParcel.id}</div>
                 </div>
-                <div>
+                <div className="parcel-detail-card">
                   <div className="detail-label">Courier</div>
                   <div className="detail-value">{selectedParcel.courier || 'Not specified'}</div>
                   <div className="detail-sub">Type: {selectedParcel.parcel_type || 'Not specified'}</div>
                 </div>
-                <div>
+                <div className="parcel-detail-card parcel-detail-card-wide">
                   <div className="detail-label">Status</div>
-                  <div className="detail-value">{selectedParcel.status?.charAt(0).toUpperCase() + selectedParcel.status?.slice(1) || 'Received'}</div>
+                  <div className="detail-value">
+                    <span className={`status-badge ${getStatusClass(selectedParcel.status)}`}>
+                      {selectedParcel.status?.charAt(0).toUpperCase() + selectedParcel.status?.slice(1) || 'Received'}
+                    </span>
+                  </div>
                   <div className="detail-sub">
                     Received: {selectedParcel.received_date 
                       ? new Date(selectedParcel.received_date).toLocaleString() 
@@ -506,7 +638,7 @@ const SecurityParcels = () => {
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer parcel-details-footer">
               {(!selectedParcel.status || selectedParcel.status === 'received') && (
                 <button
                   className="btn-primary"
@@ -533,7 +665,7 @@ const SecurityParcels = () => {
                   Mark Collected
                 </button>
               )}
-              <button className="btn-secondary" onClick={closeDetails}>Close</button>
+              <button className="btn-secondary parcel-details-close" onClick={closeDetails}>Close</button>
             </div>
           </div>
         </div>

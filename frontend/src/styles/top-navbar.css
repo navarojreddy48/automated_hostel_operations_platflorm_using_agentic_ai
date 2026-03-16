@@ -1,25 +1,67 @@
 .top-navbar {
   position: fixed;
   top: 0;
-  left: var(--sidebar-width, 280px);
+  left: 0;
   right: 0;
-  height: 72px;
+  width: 100%;
+  height: auto;
+  min-height: 56px;
+  box-sizing: border-box;
   background: #ffffff;
   border-bottom: 1px solid #dbe7f8;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 16px;
-  z-index: 900;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  z-index: 1200;
   box-shadow: 0 6px 14px rgba(17, 51, 106, 0.08);
   transition: left 320ms cubic-bezier(0.22, 1, 0.36, 1), padding 220ms ease;
+}
+
+
+/* Tablet: sidebar width follows the shared CSS variable */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .top-navbar {
+    left: var(--sidebar-width, 280px);
+    width: calc(100% - var(--sidebar-width, 280px));
+    height: 72px;
+    padding: 0 16px;
+  }
+}
+
+/* Desktop: sidebar width is JS-controlled via --sidebar-width */
+@media (min-width: 1025px) {
+  .top-navbar {
+    left: var(--sidebar-width, 280px);
+    width: calc(100% - var(--sidebar-width, 280px));
+    height: 72px;
+    padding: 0 16px;
+  }
 }
 
 .top-navbar-actions {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.top-navbar-menu-btn {
+  display: none;
+  border: 1px solid #d8e7ff;
+  background: #f7fbff;
+  color: #1e3e70;
+  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-right: auto;
 }
 
 .top-navbar-logout-inline {
@@ -49,8 +91,28 @@
   gap: 8px;
   cursor: pointer;
   color: #1e3e70;
-  min-width: 236px;
+  min-width: 0;
+  width: auto;
+  max-width: min(64vw, 320px);
+  height: 44px;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  overflow: hidden;
   transition: all 0.2s ease;
+}
+
+@media (min-width: 481px) {
+  .top-navbar-profile-trigger {
+    width: auto;
+    min-width: 150px;
+    justify-content: flex-start;
+  }
+}
+
+@media (min-width: 768px) {
+  .top-navbar-profile-trigger {
+    min-width: 236px;
+  }
 }
 
 .top-navbar-profile-trigger:hover {
@@ -75,6 +137,7 @@
   text-align: left;
   line-height: 1.2;
   min-width: 0;
+  overflow: hidden;
 }
 
 .top-navbar-user-text strong {
@@ -115,6 +178,7 @@
   padding: 10px;
   box-shadow: 0 18px 34px rgba(17, 51, 106, 0.25);
   border: 1px solid #d6e7ff;
+  z-index: 1210;
 }
 
 .top-profile-card {
@@ -210,32 +274,68 @@
   box-shadow: 0 8px 14px rgba(31, 62, 112, 0.12);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767px) {
   .top-navbar {
-    left: var(--sidebar-width, 88px);
-    padding: 0 12px;
+    left: 0;
+    width: 100%;
+    height: 72px;
+    min-height: 72px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
   }
 
-  .top-navbar-profile-panel {
-    width: min(276px, calc(100vw - 96px));
+  .top-navbar-actions {
+    gap: 8px;
+  }
+
+  .top-navbar-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .top-navbar-profile-trigger {
-    min-width: 0;
+    max-width: min(56vw, 260px);
   }
 
-  .top-navbar-user-text {
-    display: none;
+  .top-navbar-profile-panel {
+    width: min(276px, calc(100vw - 32px));
   }
 
   .top-navbar-logout-inline {
-    padding: 8px 10px;
+    padding: 6px 12px;
+    font-size: 14px;
+    flex-shrink: 0;
   }
 }
 
 @media (max-width: 480px) {
   .top-navbar {
     left: 0;
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    padding: 0.5rem;
+  }
+
+  .top-navbar-actions {
+    gap: 6px;
+    width: 100%;
+  }
+
+  .top-navbar-profile-trigger {
+    min-width: 0;
+    max-width: calc(100% - 92px);
+  }
+
+  .top-navbar-user-text strong {
+    font-size: 12px;
+  }
+
+  .top-navbar-user-text small {
+    font-size: 10px;
   }
 
   .top-navbar-profile-panel {

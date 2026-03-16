@@ -34,10 +34,27 @@
 }
 
 .leave-header {
+  margin-bottom: 20px;
+}
+
+.page-header-card {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-header-text h2,
+.page-header-text h1 {
+  margin: 0;
+}
+
+.page-header-text p {
+  margin: 4px 0 0 0;
 }
 
 .leave-title {
@@ -55,18 +72,18 @@
 
 .request-leave-btn {
   padding: 10px 18px;
-  background-color: var(--accent);
-  color: var(--white);
+  background: #0f172a;
+  color: #ffffff;
   border: none;
-  border-radius: 6px;
+  border-radius: 25px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .request-leave-btn:hover {
-  background-color: #2563eb;
+  background-color: #111827;
   box-shadow: var(--shadow-md);
 }
 
@@ -312,31 +329,48 @@
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 2000;
+}
+
+.modal-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: 2100;
+  padding: 16px;
+  overflow-y: auto;
 }
 
-.modal-card {
+.modal-container .modal-card,
+.modal-container .modal-content {
   background-color: var(--white);
   border-radius: 12px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  width: 95%;
   max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
+  max-height: 85vh;
   overflow-y: auto;
 }
 
 .modal-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  padding: 24px;
+  align-items: center;
+  padding: 16px;
   border-bottom: 1px solid var(--border);
+}
+
+.modal-header > div {
+  padding-right: 48px;
 }
 
 .modal-title {
@@ -353,14 +387,30 @@
 }
 
 .modal-close-btn {
-  padding: 4px 8px;
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   color: var(--text-light);
   font-size: 18px;
+  flex-shrink: 0;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    margin: 10px;
+  }
 }
 
 .modal-close-btn:hover {
@@ -369,7 +419,7 @@
 }
 
 .modal-form {
-  padding: 24px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -427,19 +477,21 @@
 
 .modal-actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 12px;
-  padding-top: 12px;
+  padding: 16px;
+  background: var(--white);
   border-top: 1px solid var(--border);
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .modal-cancel-btn {
-  padding: 10px 18px;
-  background-color: var(--white);
+  width: 100%;
+  padding: 12px;
+  background: #f5f5f5;
   color: var(--text-dark);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -452,11 +504,12 @@
 }
 
 .modal-submit-btn {
-  padding: 10px 18px;
-  background-color: var(--success);
+  width: 100%;
+  padding: 14px;
+  background: #1e8e78;
   color: var(--white);
   border: none;
-  border-radius: 6px;
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
@@ -464,7 +517,7 @@
 }
 
 .modal-submit-btn:hover {
-  background-color: #059669;
+  background-color: #187a67;
   box-shadow: var(--shadow-md);
 }
 
@@ -472,9 +525,50 @@
   transform: scale(0.98);
 }
 
+.leave-feedback-modal {
+  max-width: 460px;
+}
+
+.leave-feedback-body {
+  padding: 16px;
+}
+
+.leave-feedback-text {
+  margin: 0;
+  white-space: pre-line;
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+.leave-feedback-text.is-success {
+  color: #166534;
+}
+
+.leave-feedback-text.is-error {
+  color: #991b1b;
+}
+
 /* ==================== RESPONSIVE ==================== */
 
-@media (max-width: 768px) {
+@media (min-width: 768px) and (max-width: 1024px) {
+  .modal-container {
+    padding: 20px;
+  }
+
+  .modal-container .modal-card,
+  .modal-container .modal-content {
+    width: 85%;
+    max-height: calc(100vh - 40px);
+  }
+
+  .modal-header,
+  .modal-form {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+}
+
+@media (max-width: 767px) {
   .leave-layout {
     grid-template-columns: 1fr;
   }
@@ -489,11 +583,18 @@
   }
 
   .leave-header {
-    flex-direction: column;
-    gap: 16px;
+    margin-bottom: 20px;
   }
 
-  .request-leave-btn {
+  .page-header-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .request-leave-btn,
+  .primary-action-btn {
     width: 100%;
   }
 
@@ -501,9 +602,27 @@
     grid-template-columns: 1fr;
   }
 
-  .modal-card {
-    width: 95%;
-    max-height: 85vh;
+  .modal-container {
+    top: 70px;
+    height: calc(100vh - 70px);
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .modal-container .modal-card,
+  .modal-container .modal-content {
+    width: 94%;
+    margin: 8px auto 12px;
+    max-width: 500px;
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    border-radius: 16px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-actions {
+    background: var(--white);
+    border-top: 1px solid #eee;
   }
 
   .calendar-container {
@@ -572,9 +691,14 @@
     font-size: 10px;
   }
 
-  .modal-card {
-    width: 95%;
-    max-height: 80vh;
+  .modal-container .modal-card,
+  .modal-container .modal-content {
+    width: 94%;
+    max-width: 500px;
+    max-height: calc(100vh - 96px);
+    border-radius: 16px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .modal-header {
@@ -598,11 +722,13 @@
   }
 
   .modal-actions {
-    gap: 8px;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .modal-cancel-btn,
   .modal-submit-btn {
+    width: 100%;
     padding: 8px 14px;
     font-size: 13px;
   }

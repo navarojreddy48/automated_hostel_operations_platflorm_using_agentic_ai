@@ -9,12 +9,32 @@ const StudentLeave = () => {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [messageModal, setMessageModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    success: true,
+  });
   const [formData, setFormData] = useState({
     leaveType: '',
     fromDate: '',
     toDate: '',
     reason: '',
   });
+
+  const getTodayDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  useEffect(() => {
+    if (showModal) {
+      window.dispatchEvent(new Event('hostel:close-mobile-sidebar'));
+    }
+  }, [showModal]);
 
   useEffect(() => {
     const fetchLeaves = async () => {
@@ -38,28 +58,51 @@ const StudentLeave = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      };
+
+      if (name === 'fromDate' && next.toDate && next.toDate < value) {
+        next.toDate = value;
+      }
+
+      return next;
+    });
+  };
+
+  const showMessageModal = (title, message, success = true) => {
+    setMessageModal({
+      open: true,
+      title,
+      message,
+      success,
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const today = getTodayDateString();
     
     // Validate form
     if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.reason) {
-      alert('Please fill in all required fields');
+      showMessageModal('Missing Details', 'Please fill in all required fields.', false);
       return;
     }
 
     if (new Date(formData.toDate) < new Date(formData.fromDate)) {
-      alert('End date must be after start date');
+      showMessageModal('Invalid Dates', 'End date must be after start date.', false);
+      return;
+    }
+
+    if (formData.fromDate < today || formData.toDate < today) {
+      showMessageModal('Invalid Dates', 'Leave dates cannot be in the past.', false);
       return;
     }
 
     if (!currentUser?.userId) {
-      alert('You are not authenticated. Please log in again.');
+      showMessageModal('Authentication Required', 'You are not authenticated. Please log in again.', false);
       return;
     }
 
@@ -96,13 +139,13 @@ const StudentLeave = () => {
           reason: '',
         });
         setShowModal(false);
-        alert('Leave request submitted successfully!');
+        showMessageModal('Request Submitted', 'Leave request submitted successfully!');
       } else {
-        alert('Error: ' + (data.message || 'Failed to submit leave request'));
+        showMessageModal('Submission Failed', data.message || 'Failed to submit leave request.', false);
       }
     } catch (error) {
       console.error('Error submitting leave:', error);
-      alert('Network error: ' + error.message);
+      showMessageModal('Network Error', `Network error: ${error.message}`, false);
     } finally {
       setSubmitting(false);
     }
@@ -212,13 +255,13 @@ const StudentLeave = () => {
     <>
           <main className="student-main">
           {/* HEADER */}
-          <header className="leave-header">
-            <div>
-              <h1 className="leave-title">Leave Requests</h1>
+          <header className="page-header-card leave-header">
+            <div className="page-header-text">
+              <h2 className="leave-title">Leave Requests</h2>
               <p className="leave-subtitle">Request leave to stay in hostel and skip college</p>
             </div>
             <button
-              className="request-leave-btn"
+              className="primary-action-btn request-leave-btn"
               onClick={() => setShowModal(true)}
             >
               + Request Leave
@@ -353,8 +396,9 @@ const StudentLeave = () => {
       {/* MODAL OVERLAY */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          {/* MODAL CARD */}
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-container">
+            {/* MODAL CARD */}
+            <div className="modal-card modal-content" onClick={(e) => e.stopPropagation()}>
             {/* MODAL HEADER */}
             <div className="modal-header">
               <div>
@@ -408,6 +452,7 @@ const StudentLeave = () => {
                     className="form-input"
                     value={formData.fromDate}
                     onChange={handleInputChange}
+                    min={getTodayDateString()}
                   />
                 </div>
 
@@ -422,6 +467,7 @@ const StudentLeave = () => {
                     className="form-input"
                     value={formData.toDate}
                     onChange={handleInputChange}
+                    min={formData.fromDate || getTodayDateString()}
                   />
                 </div>
               </div>
@@ -464,6 +510,43 @@ const StudentLeave = () => {
         </button>
               </div>
             </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messageModal.open && (
+        <div className="modal-overlay" onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}>
+          <div className="modal-container">
+            <div className="modal-card modal-content leave-feedback-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h2 className="modal-title">{messageModal.title}</h2>
+                  <p className="modal-subtitle">{messageModal.success ? 'Completed successfully' : 'Please review and try again'}</p>
+                </div>
+                <button
+                  className="modal-close-btn"
+                  onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="leave-feedback-body">
+                <p className={`leave-feedback-text ${messageModal.success ? 'is-success' : 'is-error'}`}>
+                  {messageModal.message}
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="modal-submit-btn"
+                  onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}
+                >
+                  OK
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

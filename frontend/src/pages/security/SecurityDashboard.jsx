@@ -1,249 +1,436 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import '../../styles/security-dashboard.css';
 
+const API_BASE = 'http://localhost:5000';
+
+const isValidDate = (value) => {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime());
+};
+
+const formatDateTime = (value) => {
+  if (!isValidDate(value)) {
+    return 'Not available';
+  }
+
+  return new Date(value).toLocaleString([], {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+};
+
+const formatRelativeTime = (value) => {
+  if (!isValidDate(value)) {
+    return 'No recent update';
+  }
+
+  const deltaMs = Date.now() - new Date(value).getTime();
+  const deltaMinutes = Math.max(1, Math.floor(deltaMs / 60000));
+
+  if (deltaMinutes < 60) {
+    return `${deltaMinutes} min ago`;
+  }
+
+  const deltaHours = Math.floor(deltaMinutes / 60);
+  if (deltaHours < 24) {
+    return `${deltaHours} hr ago`;
+  }
+
+  const deltaDays = Math.floor(deltaHours / 24);
+  return `${deltaDays} day${deltaDays > 1 ? 's' : ''} ago`;
+};
+
+const normalizeStatus = (status) => {
+  if (!status) {
+    return 'inside';
+  }
+
+  return status.toLowerCase().trim();
+};
+
+const getVisitorTone = (status) => {
+  const normalizedStatus = normalizeStatus(status);
+
+  if (normalizedStatus === 'overstayed') {
+    return 'alert';
+  }
+
+  if (normalizedStatus === 'exited') {
+    return 'muted';
+  }
+
+  return 'live';
+};
+
+const getLogTone = (log) => {
+  const descriptor = `${log.action || ''} ${log.details || ''}`.toLowerCase();
+
+  if (descriptor.includes('overstay') || descriptor.includes('alert') || descriptor.includes('late')) {
+    return 'alert';
+  }
+
+  if (descriptor.includes('checkout') || descriptor.includes('exit')) {
+    return 'cool';
+  }
+
+  return 'live';
+};
+
 const SecurityDashboard = () => {
-  const [activeTab, setActiveTab] = useState('visitors');
   const [searchQuery, setSearchQuery] = useState('');
   const [visitors, setVisitors] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [checkingOutId, setCheckingOutId] = useState(null);
 
+  const fetchDashboardData = async ({ silent = false } = {}) => {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setError('');
+
+    try {
+      const [visitorRes, logRes] = await Promise.all([
+        fetch(`${API_BASE}/api/security/visitors/active`),
+        fetch(`${API_BASE}/api/security/logs`)
+      ]);
+
+      const [visitorData, logData] = await Promise.all([visitorRes.json(), logRes.json()]);
+
+      setVisitors(visitorData.success && Array.isArray(visitorData.data) ? visitorData.data : []);
+      setLogs(logData.success && Array.isArray(logData.data) ? logData.data : []);
+      setLastUpdated(new Date().toISOString());
+    } catch (fetchError) {
+      console.error('Error fetching security data:', fetchError);
+      setError('Unable to load live security activity right now.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch active visitors
-        const visitorRes = await fetch('http://localhost:5000/api/security/visitors/active');
-        const visitorData = await visitorRes.json();
-        if (visitorData.success && Array.isArray(visitorData.data)) {
-          setVisitors(visitorData.data);
-        }
-        
-        // Fetch security logs
-        const logRes = await fetch('http://localhost:5000/api/security/logs');
-        const logData = await logRes.json();
-        if (logData.success && Array.isArray(logData.data)) {
-          setLogs(logData.data);
-        }
-        
-        setLoading(false);
-      } catch (error) {
-        console.error('Error fetching security data:', error);
-        setLoading(false);
-      }
-    };
-    
-    fetchData();
+    fetchDashboardData();
   }, []);
 
   const handleCheckout = async (visitorId) => {
     setCheckingOutId(visitorId);
     try {
-      const res = await fetch(`http://localhost:5000/api/security/visitor/${visitorId}/checkout`, {
+      const response = await fetch(`${API_BASE}/api/security/visitor/${visitorId}/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
-      const data = await res.json();
+      const data = await response.json();
+
       if (data.success) {
-        // Optimistically update the UI - remove checked out visitor
-        setVisitors(prev => prev.filter(v => v.id !== visitorId));
+        await fetchDashboardData({ silent: true });
+      } else {
+        setError(data.message || 'Unable to complete checkout.');
       }
-    } catch (error) {
-      console.error('Error checking out visitor:', error);
+    } catch (checkoutError) {
+      console.error('Error checking out visitor:', checkoutError);
+      setError('Unable to complete checkout right now.');
     } finally {
       setCheckingOutId(null);
     }
   };
 
+  const sortedLogs = useMemo(() => {
+    return [...logs].sort((left, right) => {
+      const leftValue = isValidDate(left.timestamp) ? new Date(left.timestamp).getTime() : 0;
+      const rightValue = isValidDate(right.timestamp) ? new Date(right.timestamp).getTime() : 0;
+      return rightValue - leftValue;
+    });
+  }, [logs]);
+
   const filteredVisitors = useMemo(() => {
-    if (!searchQuery.trim()) return visitors;
+    if (!searchQuery.trim()) {
+      return visitors;
+    }
+
     const query = searchQuery.toLowerCase();
-    return visitors.filter((item) =>
-      [item.visitor_name, item.id_number, item.student_name || '']
+
+    return visitors.filter((visitor) =>
+      [
+        visitor.visitor_name,
+        visitor.id_number,
+        visitor.student_name,
+        visitor.phone,
+        visitor.purpose,
+        visitor.room_number
+      ]
+        .filter(Boolean)
         .join(' ')
         .toLowerCase()
         .includes(query)
     );
   }, [searchQuery, visitors]);
 
-  // Calculate summary statistics
-  const inside = visitors.filter(v => v.status === 'inside').length;
-  const exited = visitors.filter(v => v.status === 'exited').length;
-  const overstayed = visitors.filter(v => v.status === 'overstayed').length;
-  const visitorCount = visitors.length;
-  const logCount = logs.length;
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return sortedLogs;
+    }
 
-  const getStatusClass = (status) => status ? status.toLowerCase().replace(/\s+/g, '-') : 'unknown';
+    const query = searchQuery.toLowerCase();
+    return sortedLogs.filter((log) =>
+      [log.action, log.details, log.timestamp]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query)
+    );
+  }, [searchQuery, sortedLogs]);
+
+  const insideCount = visitors.filter((visitor) => normalizeStatus(visitor.status) === 'inside').length;
+  const overdueCount = visitors.filter((visitor) => normalizeStatus(visitor.status) === 'overstayed').length;
+  const recordsToday = sortedLogs.filter((log) => {
+    if (!isValidDate(log.timestamp)) {
+      return false;
+    }
+
+    const logDate = new Date(log.timestamp);
+    const now = new Date();
+
+    return logDate.toDateString() === now.toDateString();
+  }).length;
+  const uniqueHosts = new Set(visitors.map((visitor) => visitor.student_name).filter(Boolean)).size;
+  const latestLog = sortedLogs[0];
+  const recentEntry = [...visitors]
+    .filter((visitor) => isValidDate(visitor.entry_time))
+    .sort((left, right) => new Date(right.entry_time).getTime() - new Date(left.entry_time).getTime())[0];
+
+  const renderEmptyState = (title, description) => (
+    <div className="secdash-empty">
+      <div className="secdash-empty-mark">0</div>
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </div>
+  );
 
   return (
-    <>
-        <main className="security-main">
-          {/* HEADER */}
-          <header className="security-header">
-            <div>
-              <h1 className="security-title-main">Visitor & Access Log</h1>
-              <p className="security-subtitle">
-                Monitor active visitors and security logs
-              </p>
-            </div>
-          </header>
-
-          {/* SUMMARY STATUS CARDS */}
-          <section className="security-summary-cards">
-            <div className="security-status-card awaiting">
-              <div className="card-content">
-                <div className="card-label">Visitors Inside</div>
-                <div className="card-value">{inside}</div>
-              </div>
-              <div className="card-icon">👥</div>
-            </div>
-
-            <div className="security-status-card out">
-              <div className="card-content">
-                <div className="card-label">Exited</div>
-                <div className="card-value">{exited}</div>
-              </div>
-              <div className="card-icon">🚪</div>
-            </div>
-
-            <div className="security-status-card returned">
-              <div className="card-content">
-                <div className="card-label">Overstayed</div>
-                <div className="card-value">{overstayed}</div>
-              </div>
-              <div className="card-icon">⚠️</div>
-            </div>
-
-            <div className="security-status-card parcels">
-              <div className="card-content">
-                <div className="card-label">Total Visitors</div>
-                <div className="card-value">{visitorCount}</div>
-              </div>
-              <div className="card-icon">📋</div>
-            </div>
-          </section>
-
-          {/* SEARCH BAR */}
-          <div className="search-container">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search by name, roll number, or room..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            <span className="search-icon">🔍</span>
+    <div className="secdash-page">
+      <div className="secdash-shell">
+        <section className="secdash-hero">
+          <div className="secdash-hero-copy">
+            <span className="secdash-eyebrow">Security operations</span>
+            <h1>Security Dashboard</h1>
+            <p>
+              Monitor live visitor presence, recent gate activity, and operational handoffs from one place.
+            </p>
           </div>
 
-          {/* TAB SWITCHER */}
-          <div className="tab-switcher">
+          <div className="secdash-hero-side">
+            <div className="secdash-hero-stat">
+              <span className="secdash-hero-label">Last sync</span>
+              <strong>{lastUpdated ? formatRelativeTime(lastUpdated) : 'Waiting for sync'}</strong>
+              <span>{lastUpdated ? formatDateTime(lastUpdated) : 'Connect to the backend to load activity.'}</span>
+            </div>
+
             <button
-              className={`tab-button ${activeTab === 'visitors' ? 'active' : ''}`}
-              onClick={() => setActiveTab('visitors')}
+              type="button"
+              className="secdash-refresh-btn"
+              onClick={() => fetchDashboardData({ silent: true })}
+              disabled={refreshing}
             >
-              <span className="tab-label">Visitors</span>
-              <span className="tab-badge">{visitorCount}</span>
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'logs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('logs')}
-            >
-              <span className="tab-label">Logs</span>
-              <span className="tab-badge">{logCount}</span>
+              {refreshing ? 'Refreshing...' : 'Refresh data'}
             </button>
           </div>
+        </section>
 
-          {/* MAIN CONTENT AREA */}
-          <section className="security-content-area">
-            {activeTab === 'visitors' && (
-              <>
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>Loading visitors...</div>
-                ) : filteredVisitors.length > 0 ? (
-                  <div className="security-list">
-                    {filteredVisitors.map((visitor) => (
-                      <div key={visitor.id} className="security-card">
-                        <div className="card-main">
-                          <div className="card-title">{visitor.visitor_name}</div>
-                          <div className="card-subtitle">
-                            {visitor.id_type}: {visitor.id_number}
-                          </div>
-                          <div style={{ marginTop: '8px', fontSize: '13px', color: '#6b7280' }}>
-                            <div>📍 {visitor.student_name || 'N/A'}</div>
-                            <div>📱 {visitor.phone}</div>
-                            {visitor.purpose && <div>🎯 {visitor.purpose}</div>}
-                          </div>
-                        </div>
-                        <div className="card-details">
-                          <div className="detail-item">
-                            <span className="detail-label">Entry:</span>
-                            <span className="detail-value">
-                              {visitor.entry_time && new Date(visitor.entry_time).toLocaleTimeString()}
-                            </span>
-                          </div>
-                          <div className="detail-item">
-                            <span className={`detail-status ${getStatusClass(visitor.status)}`}>
-                              {visitor.status?.toUpperCase() || 'INSIDE'}
-                            </span>
-                          </div>
-                          {visitor.status === 'inside' && (
-                            <button 
-                              className="btn-checkout"
-                              onClick={() => handleCheckout(visitor.id)}
-                              disabled={checkingOutId === visitor.id}
-                              style={{
-                                marginTop: '8px',
-                                padding: '6px 12px',
-                                fontSize: '13px',
-                                backgroundColor: checkingOutId === visitor.id ? '#9ca3af' : '#10b981',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                cursor: checkingOutId === visitor.id ? 'not-allowed' : 'pointer'
-                              }}
-                            >
-                              {checkingOutId === visitor.id && <span className="btn-spinner" />}
-                              {checkingOutId === visitor.id ? 'Checking out...' : 'Checkout'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af' }}>
-                    <p>No active visitors at the moment</p>
-                  </div>
-                )}
-              </>
-            )}
+        {error && <div className="secdash-alert">{error}</div>}
 
-            {activeTab === 'logs' && (
-              <>
-                {logs.length > 0 ? (
-                  <div className="security-list">
-                    {logs.slice(0, 20).map((log, idx) => (
-                      <div key={idx} className="security-card">
-                        <div className="card-main">
-                          <div className="card-title">{log.action || 'Log Entry'}</div>
-                          <div className="card-subtitle">{log.details || 'N/A'}</div>
-                          <div style={{ marginTop: '8px', fontSize: '13px', color: '#6b7280' }}>
-                            Time: {log.timestamp && new Date(log.timestamp).toLocaleString()}
-                          </div>
+        <section className="secdash-metrics">
+          <article className="secdash-metric secdash-metric-live">
+            <span className="secdash-metric-label">Active visitors</span>
+            <strong>{insideCount}</strong>
+            <p>Currently checked into the hostel.</p>
+          </article>
+
+          <article className="secdash-metric secdash-metric-cool">
+            <span className="secdash-metric-label">Records today</span>
+            <strong>{recordsToday}</strong>
+            <p>Gate events captured today.</p>
+          </article>
+
+          <article className="secdash-metric secdash-metric-alert">
+            <span className="secdash-metric-label">Needs attention</span>
+            <strong>{overdueCount}</strong>
+            <p>Visitors flagged for delayed exit.</p>
+          </article>
+
+          <article className="secdash-metric secdash-metric-neutral">
+            <span className="secdash-metric-label">Unique hosts</span>
+            <strong>{uniqueHosts}</strong>
+            <p>Students currently associated with visits.</p>
+          </article>
+        </section>
+
+        <section className="secdash-workspace">
+          <section className="secdash-panel secdash-panel-primary">
+            <div className="secdash-panel-head secdash-panel-head-stack">
+              <div>
+                <h2>Active Visitors</h2>
+                <p>Search by visitor, host, ID, phone, room, or purpose.</p>
+              </div>
+
+              <label className="secdash-search">
+                <span>Search active roster</span>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search visitors or logs"
+                />
+              </label>
+            </div>
+
+            {loading ? (
+              <div className="secdash-card-grid">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="secdash-skeleton-card" />
+                ))}
+              </div>
+            ) : filteredVisitors.length > 0 ? (
+              <div className="secdash-card-grid">
+                {filteredVisitors.map((visitor) => {
+                  const visitorStatus = normalizeStatus(visitor.status);
+                  const showCheckout = visitorStatus === 'inside';
+
+                  return (
+                    <article key={visitor.id} className="secdash-visitor-card">
+                      <div className="secdash-card-top">
+                        <div>
+                          <h3>{visitor.visitor_name || 'Unknown visitor'}</h3>
+                          <p>
+                            {visitor.id_type || 'ID'}
+                            {' · '}
+                            {visitor.id_number || 'Not recorded'}
+                          </p>
                         </div>
+
+                        <span className={`secdash-status-pill secdash-status-${getVisitorTone(visitor.status)}`}>
+                          {visitorStatus.replace(/-/g, ' ')}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: '#9ca3af' }}>
-                    <p>No security logs available</p>
-                  </div>
-                )}
-              </>
+
+                      <dl className="secdash-visitor-details">
+                        <div>
+                          <dt>Host student</dt>
+                          <dd>{visitor.student_name || 'Not assigned'}</dd>
+                        </div>
+                        <div>
+                          <dt>Contact</dt>
+                          <dd>{visitor.phone || 'Not provided'}</dd>
+                        </div>
+                        <div>
+                          <dt>Purpose</dt>
+                          <dd>{visitor.purpose || 'General visit'}</dd>
+                        </div>
+                        <div>
+                          <dt>Entry time</dt>
+                          <dd>{formatDateTime(visitor.entry_time)}</dd>
+                        </div>
+                      </dl>
+
+                      <div className="secdash-card-actions">
+                        <span className="secdash-footnote">{formatRelativeTime(visitor.entry_time)}</span>
+
+                        {showCheckout && (
+                          <button
+                            type="button"
+                            className="secdash-action-btn"
+                            onClick={() => handleCheckout(visitor.id)}
+                            disabled={checkingOutId === visitor.id}
+                          >
+                            {checkingOutId === visitor.id ? 'Checking out...' : 'Complete checkout'}
+                          </button>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              renderEmptyState('No visitors in the roster', 'Active entries will appear here as soon as the gate register receives them.')
             )}
           </section>
-        </main>
-    </>
+
+          <aside className="secdash-rail">
+            <section className="secdash-panel">
+              <div className="secdash-panel-head">
+                <div>
+                  <h2>Recent Security Logs</h2>
+                  <p>Latest recorded events from the security desk.</p>
+                </div>
+                <span className="secdash-inline-count">{filteredLogs.length}</span>
+              </div>
+
+              {loading ? (
+                <div className="secdash-log-skeletons">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <div key={index} className="secdash-log-skeleton" />
+                  ))}
+                </div>
+              ) : filteredLogs.length > 0 ? (
+                <div className="secdash-log-list">
+                  {filteredLogs.slice(0, 8).map((log, index) => (
+                    <article key={`${log.timestamp || 'log'}-${index}`} className="secdash-log-item">
+                      <span className={`secdash-log-dot secdash-log-${getLogTone(log)}`} />
+                      <div className="secdash-log-copy">
+                        <h3>{log.action || 'Security log'}</h3>
+                        <p>{log.details || 'No additional context available for this event.'}</p>
+                        <span>{formatDateTime(log.timestamp)}</span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                renderEmptyState('No recent logs', 'New entries from the gate and desk actions will be listed here.')
+              )}
+            </section>
+
+            <section className="secdash-panel">
+              <div className="secdash-panel-head">
+                <div>
+                  <h2>Operational Snapshot</h2>
+                  <p>Quick reference for the current shift.</p>
+                </div>
+              </div>
+
+              <div className="secdash-snapshot-list">
+                <div className="secdash-snapshot-item">
+                  <span>Latest activity</span>
+                  <strong>{latestLog ? formatRelativeTime(latestLog.timestamp) : 'No activity recorded'}</strong>
+                  <p>{latestLog ? latestLog.action || 'Security log' : 'Awaiting the first event of the shift.'}</p>
+                </div>
+
+                <div className="secdash-snapshot-item">
+                  <span>Most recent visitor entry</span>
+                  <strong>{recentEntry ? recentEntry.visitor_name || 'Unnamed visitor' : 'No live visitors'}</strong>
+                  <p>{recentEntry ? formatDateTime(recentEntry.entry_time) : 'No active check-ins right now.'}</p>
+                </div>
+
+                <div className="secdash-snapshot-item">
+                  <span>Tracked hosts</span>
+                  <strong>{uniqueHosts}</strong>
+                  <p>Distinct students currently linked to visits.</p>
+                </div>
+              </div>
+            </section>
+          </aside>
+        </section>
+      </div>
+    </div>
   );
 };
 

@@ -22,7 +22,7 @@
 
 .utilities-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 24px;
   margin-bottom: 32px;
 }
@@ -87,6 +87,12 @@
   background: #d97706;
 }
 
+.room-utilities-container .btn-primary,
+.room-utilities-container .btn-warning {
+  min-height: 44px;
+  font-weight: 600;
+}
+
 .result-box {
   margin-top: 20px;
   padding: 16px;
@@ -119,7 +125,7 @@
 
 .discrepancies-list {
   margin-top: 12px;
-  max-height: 300px;
+  max-height: 280px;
   overflow-y: auto;
 }
 
@@ -129,8 +135,9 @@
   border-radius: 6px;
   margin-bottom: 8px;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.5;
   border: 1px solid #fbbf24;
+  overflow-wrap: anywhere;
 }
 
 .discrepancy-item strong {
@@ -172,4 +179,110 @@
 .info-section strong {
   color: #1e293b;
   font-weight: 600;
+}
+
+@media (max-width: 1024px) {
+  .room-utilities-container {
+    padding: 18px;
+  }
+
+  .utilities-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+@media (max-width: 768px) {
+  .room-utilities-container {
+    padding: 14px;
+  }
+
+  .utilities-header {
+    margin-bottom: 18px;
+  }
+
+  .utilities-header h1 {
+    font-size: 22px;
+  }
+
+  .utilities-header p {
+    font-size: 13px;
+  }
+
+  .utility-card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .card-icon {
+    font-size: 38px;
+    margin-bottom: 10px;
+  }
+
+  .utility-card h2 {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+
+  .utility-card p {
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+
+  .result-box {
+    margin-top: 14px;
+    padding: 12px;
+  }
+
+  .result-box h3 {
+    font-size: 15px;
+  }
+
+  .discrepancies-list {
+    max-height: 220px;
+  }
+
+  .discrepancy-item {
+    padding: 10px;
+    font-size: 12px;
+  }
+
+  .info-section {
+    padding: 14px;
+  }
+
+  .info-section h3 {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+
+  .info-section li {
+    padding: 10px 0;
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .room-utilities-container {
+    padding: 12px;
+  }
+
+  .utilities-header h1 {
+    font-size: 20px;
+  }
+
+  .utility-card {
+    padding: 12px;
+  }
+
+  .room-utilities-container .btn-primary,
+  .room-utilities-container .btn-warning {
+    padding: 10px 14px;
+    min-height: 42px;
+    font-size: 13px;
+  }
+
+  .result-box p {
+    font-size: 13px;
+  }
 }

@@ -71,11 +71,21 @@ const Room = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [blocks, setBlocks] = useState([]);
+  const [feedbackModal, setFeedbackModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    success: true,
+  });
   const [formData, setFormData] = useState({
     preferredRoom: '',
     preferredBlock: '',
     detailedReason: ''
   });
+
+  const showFeedbackModal = (title, message, success = true) => {
+    setFeedbackModal({ open: true, title, message, success });
+  };
 
   const fetchRoomDetails = async () => {
     try {
@@ -161,12 +171,12 @@ const Room = () => {
 
   const handleSubmitRequest = async () => {
     if (!currentUser?.userId) {
-      alert('Please sign in again.');
+      showFeedbackModal('Authentication Required', 'Please sign in again.', false);
       return;
     }
 
     if (!formData.preferredBlock || !formData.detailedReason.trim()) {
-      alert('Please fill in the required fields.');
+      showFeedbackModal('Missing Details', 'Please fill in the required fields.', false);
       return;
     }
 
@@ -184,7 +194,7 @@ const Room = () => {
       const data = await response.json();
 
       if (data.success) {
-        alert('Room change request submitted successfully.');
+        showFeedbackModal('Request Submitted', 'Room change request submitted successfully.');
         setFormData({
           preferredRoom: '',
           preferredBlock: blocks.length > 0 ? blocks[0].name : '',
@@ -192,11 +202,11 @@ const Room = () => {
         });
         setShowModal(false);
       } else {
-        alert(data.message || 'Failed to submit request');
+        showFeedbackModal('Submission Failed', data.message || 'Failed to submit request.', false);
       }
     } catch (error) {
       console.error('Error submitting room change request:', error);
-      alert('Failed to submit request');
+      showFeedbackModal('Submission Error', 'Failed to submit request.', false);
     }
   };
 
@@ -456,6 +466,35 @@ const Room = () => {
                 onClick={handleSubmitRequest}
               >
                 Submit Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {feedbackModal.open && (
+        <div className="request-modal-overlay" onClick={() => setFeedbackModal({ open: false, title: '', message: '', success: true })}>
+          <div className="request-modal-container" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="request-modal-header">
+              <h2>{feedbackModal.title}</h2>
+              <button
+                className="request-modal-close"
+                onClick={() => setFeedbackModal({ open: false, title: '', message: '', success: true })}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="request-modal-body" style={{ maxHeight: 'unset' }}>
+              <p style={{ margin: 0, whiteSpace: 'pre-line', color: feedbackModal.success ? '#166534' : '#991b1b' }}>
+                {feedbackModal.message}
+              </p>
+            </div>
+            <div className="request-modal-footer">
+              <button
+                className="request-btn-submit"
+                onClick={() => setFeedbackModal({ open: false, title: '', message: '', success: true })}
+              >
+                OK
               </button>
             </div>
           </div>

@@ -9,13 +9,30 @@ const SecurityDailyLogs = () => {
   const [showDetails, setShowDetails] = useState(false);
   const [allLogs, setAllLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchLogs();
   }, [selectedDate]);
 
-  const fetchLogs = async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (showDetails) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDetails]);
+
+  const fetchLogs = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const url = new URL('http://localhost:5000/api/security/logs');
       url.searchParams.append('date', selectedDate);
@@ -26,16 +43,27 @@ const SecurityDailyLogs = () => {
       if (data.success && Array.isArray(data.data)) {
         const formattedLogs = data.data.map((log) => {
           const timestamp = log.timestamp ? new Date(log.timestamp) : new Date();
+          const followUpRaw = log.follow_up_required;
+          const followUpRequired =
+            followUpRaw === true ||
+            followUpRaw === 1 ||
+            followUpRaw === '1' ||
+            String(followUpRaw || '').toLowerCase() === 'yes';
+
           return {
             id: log.id,
+            timestamp,
             time: timestamp.toLocaleTimeString(),
             date: timestamp.toISOString().split('T')[0],
             type: log.activity_type ? log.activity_type.charAt(0).toUpperCase() + log.activity_type.slice(1) : 'Other',
             description: log.description || 'No description',
             person: log.logged_by_name || 'Security Staff',
             status: log.severity ? log.severity.charAt(0).toUpperCase() + log.severity.slice(1) : 'Low',
+            location: log.location || 'Not specified',
+            actionTaken: log.action_taken || 'No action recorded',
             details: log.location ? `Location: ${log.location}` : (log.action_taken || 'N/A'),
-            remarks: log.follow_up_required === 'yes' ? 'Follow-up required' : 'No follow-up'
+            remarks: followUpRequired ? 'Follow-up required' : 'No follow-up',
+            followUpRequired
           };
         });
         setAllLogs(formattedLogs);
@@ -47,6 +75,7 @@ const SecurityDailyLogs = () => {
       console.error('Error fetching logs:', error);
       setAllLogs([]);
     } finally {
+      setRefreshing(false);
       setLoading(false);
     }
   };
@@ -123,7 +152,9 @@ const SecurityDailyLogs = () => {
                   onChange={(e) => setSelectedDate(e.target.value)}
                 />
               </div>
-              <button className="btn-action primary" onClick={fetchLogs}>View Logs</button>
+              <button className="btn-action primary" onClick={() => fetchLogs(true)}>
+                {refreshing ? 'Refreshing...' : 'Refresh Logs'}
+              </button>
             </div>
           </header>
 
@@ -171,39 +202,69 @@ const SecurityDailyLogs = () => {
                 <option>Critical</option>
               </select>
             </div>
+            <div className="filter-group log-filter-reset-group">
+              <label className="filter-label">Quick Actions</label>
+              <button
+                className="btn-action"
+                onClick={() => {
+                  setActivityFilter('All');
+                  setStatusFilter('All');
+                }}
+              >
+                Reset Filters
+              </button>
+            </div>
           </section>
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>Loading security logs...</div>
+            <div className="outpass-loading">Loading security logs...</div>
           ) : hasData ? (
-            <section className="log-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Activity Type</th>
-                    <th>Description</th>
-                    <th>Student / Visitor</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredLogs.map((log) => (
-                    <tr key={log.id} onClick={() => handleViewDetails(log)}>
-                      <td className="mono">{log.time}</td>
-                      <td>{log.type}</td>
-                      <td>{log.description}</td>
-                      <td>{log.person}</td>
-                      <td>
-                        <span className={`status-badge ${getStatusClass(log.status)}`}>
-                          {log.status}
-                        </span>
-                      </td>
+            <>
+              <section className="log-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Activity Type</th>
+                      <th>Description</th>
+                      <th>Student / Visitor</th>
+                      <th>Status</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
+                  </thead>
+                  <tbody>
+                    {filteredLogs.map((log) => (
+                      <tr key={log.id} onClick={() => handleViewDetails(log)}>
+                        <td className="mono">{log.time}</td>
+                        <td>{log.type}</td>
+                        <td>{log.description}</td>
+                        <td>{log.person}</td>
+                        <td>
+                          <span className={`status-badge ${getStatusClass(log.status)}`}>
+                            {log.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="log-cards-mobile">
+                {filteredLogs.map((log) => (
+                  <article key={`mobile-${log.id}`} className="log-card-mobile" onClick={() => handleViewDetails(log)}>
+                    <div className="log-card-head">
+                      <strong>{log.type}</strong>
+                      <span className={`status-badge ${getStatusClass(log.status)}`}>{log.status}</span>
+                    </div>
+                    <p>{log.description}</p>
+                    <div className="log-card-meta">
+                      <span>{log.time}</span>
+                      <span>{log.person}</span>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            </>
           ) : (
             <div className="empty-state">
               <span className="empty-icon">🗓️</span>
@@ -212,38 +273,54 @@ const SecurityDailyLogs = () => {
           )}
 
       {showDetails && selectedLog && (
-        <div className="modal-overlay" onClick={closeDetails}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-overlay logs-modal-overlay" onClick={closeDetails}>
+          <div className="modal-content logs-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header logs-details-header">
               <h2>Log Details</h2>
               <button className="modal-close" onClick={closeDetails}>×</button>
             </div>
             <div className="modal-body">
-              <div className="details-grid">
-                <div>
-                  <div className="detail-label">Time</div>
-                  <div className="detail-value">{selectedLog.time}</div>
-                  <div className="detail-sub">{selectedLog.id}</div>
+              <div className="logs-details-grid">
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Time</div>
+                  <div className="logs-detail-value">{selectedLog.time}</div>
                 </div>
-                <div>
-                  <div className="detail-label">Activity</div>
-                  <div className="detail-value">{selectedLog.type}</div>
-                  <div className="detail-sub">Status: {selectedLog.status}</div>
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Activity</div>
+                  <div className="logs-detail-value">{selectedLog.type}</div>
                 </div>
-                <div>
-                  <div className="detail-label">Person</div>
-                  <div className="detail-value">{selectedLog.person}</div>
-                  <div className="detail-sub">{selectedLog.description}</div>
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Severity</div>
+                  <div className="logs-detail-value">{selectedLog.status}</div>
                 </div>
-                <div>
-                  <div className="detail-label">Remarks</div>
-                  <div className="detail-value">{selectedLog.remarks}</div>
-                  <div className="detail-sub">{selectedLog.details}</div>
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Log ID</div>
+                  <div className="logs-detail-value">#{selectedLog.id}</div>
+                </div>
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Person</div>
+                  <div className="logs-detail-value">{selectedLog.person}</div>
+                </div>
+                <div className="logs-detail-item">
+                  <div className="logs-detail-label">Location</div>
+                  <div className="logs-detail-value">{selectedLog.location}</div>
+                </div>
+                <div className="logs-detail-item logs-detail-item-full">
+                  <div className="logs-detail-label">Description</div>
+                  <div className="logs-detail-value">{selectedLog.description}</div>
+                </div>
+                <div className="logs-detail-item logs-detail-item-full">
+                  <div className="logs-detail-label">Action Taken</div>
+                  <div className="logs-detail-value">{selectedLog.actionTaken}</div>
+                </div>
+                <div className="logs-detail-item logs-detail-item-full">
+                  <div className="logs-detail-label">Follow-up</div>
+                  <div className="logs-detail-value">{selectedLog.remarks}</div>
                 </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={closeDetails}>Close</button>
+            <div className="modal-footer logs-details-footer">
+              <button className="btn-secondary logs-details-close" onClick={closeDetails}>Close</button>
             </div>
           </div>
         </div>

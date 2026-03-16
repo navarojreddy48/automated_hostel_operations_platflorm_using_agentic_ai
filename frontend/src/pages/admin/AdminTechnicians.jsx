@@ -1,653 +1,760 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import '../../styles/admin-technicians.css';
+import { useEffect, useMemo, useState } from 'react';
+import { getAuthHeaders } from '../../utils/auth';
+import '../../styles/warden-technicians.css';
 
 const AdminTechnicians = () => {
-  // State for technicians data from database
   const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('All');
+  const [showModal, setShowModal] = useState(false);
+  const [modalMode, setModalMode] = useState('add'); // 'add' | 'edit' | 'view'
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [selectedTech, setSelectedTech] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null, name: '' });
+  const [deletingId, setDeletingId] = useState(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    staff_id: '',
+    specialization: '',
+    phone: '',
+    availability_status: 'available'
+  });
+  const [formError, setFormError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordFormData, setPasswordFormData] = useState({
+    password: '',
+    confirmPassword: ''
+  });
   const [submitting, setSubmitting] = useState(false);
 
-  // Fetch technicians from database on component mount
   useEffect(() => {
     fetchTechnicians();
   }, []);
 
   const fetchTechnicians = async () => {
     setLoading(true);
+    setError('');
     try {
-      const res = await fetch('http://localhost:5000/api/admin/users?role=technician');
-      const data = await res.json();
-      
-      if (data.success && Array.isArray(data.data)) {
-        setTechnicians(data.data);
+      const response = await fetch('http://localhost:5000/api/admin/users?role=technician', {
+        headers: getAuthHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching technicians:', error);
-      alert('Failed to fetch technicians from database');
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        const normalized = data.data.map((tech) => {
+          const status = (tech.status || '').toLowerCase();
+          const isActive = status === 'active';
+          return {
+            id: tech.id,
+            name: tech.name || 'N/A',
+            staff_id: tech.staff_id || 'N/A',
+            employee_id: tech.employee_id || '',
+            role: tech.specialization || 'General',
+            phone: tech.phone || tech.technician_phone || 'N/A',
+            email: tech.email || 'N/A',
+            assignedComplaints: tech.assigned_complaints || 0,
+            status: isActive ? 'Active' : 'Inactive',
+            availabilityStatus: (tech.availability_status || (isActive ? 'available' : 'off_duty')).toLowerCase()
+          };
+        });
+        setTechnicians(normalized);
+      } else {
+        setError(data.message || 'Failed to load technicians data');
+      }
+    } catch (err) {
+      setError(`Failed to load technicians: ${err.message}`);
+    } finally {
       setLoading(false);
     }
   };
 
-  // State management
-  const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [selectedTechnician, setSelectedTechnician] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    technicianId: '',
-    category: '',
-    phone: '',
-    email: '',
-    status: 'Active'
-  });
-
-  // Password form data
-  const [passwordFormData, setPasswordFormData] = useState({
-    password: '',
-    confirmPassword: '',
-  });
-
-  // Filter technicians
-  const filteredTechnicians = useMemo(() => {
-    return technicians.filter(tech => {
-      const matchesStatus = statusFilter === 'All' || tech.status === statusFilter.toLowerCase();
-      const matchesCategory = categoryFilter === 'All' || tech.category === categoryFilter;
-      const matchesSearch = 
-        tech.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        tech.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        tech.id?.toString().includes(searchTerm);
-      
-      return matchesStatus && matchesCategory && matchesSearch;
-    });
-  }, [technicians, searchTerm, categoryFilter, statusFilter]);
-
-  // Handlers
-  const handleAddTechnician = () => {
-    resetForm();
-    setSelectedTechnician(null);
-    setShowAddModal(true);
-  };
-
-  const handleViewProfile = (technician) => {
-    setSelectedTechnician(technician);
-    setShowProfileModal(true);
-  };
-
-  const handleEditTechnician = (technician) => {
-    setSelectedTechnician(technician);
+  const openAddModal = () => {
+    setModalMode('add');
+    setSelectedTech(null);
     setFormData({
-      name: technician.name,
-      technicianId: technician.id,
-      category: technician.category,
-      phone: technician.phone,
-      email: technician.email,
-      status: technician.status
+      name: '',
+      email: '',
+      password: '',
+      staff_id: '',
+      specialization: '',
+      phone: '',
+      availability_status: 'available'
     });
-    setShowAddModal(true);
+    setFormError('');
+    setShowModal(true);
   };
 
-  const handleDeleteClick = (technician) => {
-    setSelectedTechnician(technician);
-    setShowDeleteConfirm(true);
+  const openEditModal = (tech) => {
+    setModalMode('edit');
+    setSelectedTech(tech);
+    setFormData({
+      name: tech.name,
+      email: tech.email,
+      password: '',
+      staff_id: tech.staff_id || '',
+      specialization: tech.role,
+      phone: tech.phone,
+      availability_status: tech.availabilityStatus
+    });
+    setFormError('');
+    setShowModal(true);
   };
 
-  const handleChangePasswordClick = (technician) => {
-    setSelectedTechnician(technician);
+  const openViewModal = (tech) => {
+    setModalMode('view');
+    setSelectedTech(tech);
+    setFormData({
+      name: tech.name,
+      email: tech.email,
+      password: '',
+      staff_id: tech.staff_id || '',
+      specialization: tech.role,
+      phone: tech.phone,
+      availability_status: tech.availabilityStatus
+    });
+    setFormError('');
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedTech(null);
+    setFormError('');
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setFormError('');
+    setSubmitting(true);
+
+    try {
+      const isAdd = modalMode === 'add';
+      const url = isAdd
+        ? 'http://localhost:5000/api/admin/user'
+        : `http://localhost:5000/api/admin/user/${selectedTech.id}`;
+      const method = isAdd ? 'POST' : 'PUT';
+
+      const payload = isAdd
+        ? {
+            name: formData.name,
+            email: formData.email,
+            password: formData.password,
+            role: 'technician',
+            specialization: formData.specialization,
+            phone: formData.phone,
+            availability_status: formData.availability_status
+          }
+        : {
+            name: formData.name,
+            email: formData.email,
+            specialization: formData.specialization,
+            phone: formData.phone,
+            availability_status: formData.availability_status
+          };
+
+      const response = await fetch(url, {
+        method,
+        headers: getAuthHeaders(true),
+        body: JSON.stringify(payload)
+      });
+
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        throw new Error(`HTTP ${response.status}: Invalid server response`);
+      }
+
+      if (response.ok && data?.success) {
+        await fetchTechnicians();
+        closeModal();
+      } else {
+        setFormError(data?.message || `Operation failed (HTTP ${response.status})`);
+      }
+    } catch (err) {
+      setFormError('Request failed: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openDeleteConfirm = (tech) => {
+    setDeleteConfirm({ open: true, id: tech.id, name: tech.name || 'this technician' });
+  };
+
+  const openPasswordModal = (tech) => {
+    setSelectedTech(tech);
+    setPasswordError('');
     setPasswordFormData({ password: '', confirmPassword: '' });
+    setShowPasswordConfirm(false);
     setShowPasswordModal(true);
   };
 
   const handlePasswordFormChange = (e) => {
     const { name, value } = e.target;
-    setPasswordFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    setPasswordFormData((prev) => ({ ...prev, [name]: value }));
+    if (passwordError) {
+      setPasswordError('');
+    }
   };
 
-  const handleChangePassword = async () => {
+  const requestPasswordChange = () => {
     if (!passwordFormData.password || !passwordFormData.confirmPassword) {
-      alert('Please enter password in both fields');
+      setPasswordError('Please enter password in both fields');
       return;
     }
-
     if (passwordFormData.password !== passwordFormData.confirmPassword) {
-      alert('Passwords do not match');
+      setPasswordError('Passwords do not match');
       return;
     }
-
     if (passwordFormData.password.length < 4) {
-      alert('Password must be at least 4 characters long');
+      setPasswordError('Password must be at least 4 characters long');
       return;
     }
+    setShowPasswordConfirm(true);
+  };
 
-    if (!confirm(`Change password for ${selectedTechnician.name}?`)) {
-      return;
-    }
+  const handlePasswordChange = async () => {
+    if (!selectedTech) return;
 
     setSubmitting(true);
+    setPasswordError('');
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/user/${selectedTechnician.id}/password`, {
+      const response = await fetch(`http://localhost:5000/api/admin/user/${selectedTech.id}/password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ password: passwordFormData.password })
       });
-      
-      const data = await res.json();
-      
-      if (data.success) {
-        alert(data.message);
+
+      const data = await response.json();
+      if (response.ok && data?.success) {
+        setShowPasswordConfirm(false);
         setShowPasswordModal(false);
-        setSelectedTechnician(null);
+        setSelectedTech(null);
         setPasswordFormData({ password: '', confirmPassword: '' });
       } else {
-        alert(data.message || 'Failed to change password');
+        setPasswordError(data?.message || 'Failed to change password');
       }
-    } catch (error) {
-      console.error('Error changing password:', error);
-      alert('Failed to change password');
+    } catch (err) {
+      setPasswordError(err?.message || 'Failed to change password');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+  const closeDeleteConfirm = () => {
+    setDeleteConfirm({ open: false, id: null, name: '' });
   };
 
-  const handleSaveTechnician = async () => {
-    // Validation
-    if (!formData.name || !formData.email) {
-      alert('Please fill in name and email');
-      return;
-    }
-
-    setSubmitting(true);
+  const handleDelete = async (techId) => {
+    setDeletingId(techId);
     try {
-      if (selectedTechnician) {
-        alert('Edit functionality coming soon');
-      } else {
-        // Add new technician
-        const payload = {
-          name: formData.name,
-          email: formData.email,
-          password: 'tech123', // Default password
-          role: 'technician',
-          phone: formData.phone || null,
-        };
-
-        const res = await fetch('http://localhost:5000/api/admin/user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        const data = await res.json();
-        if (data.success) {
-          alert(`Added ${formData.name} successfully!`);
-          await fetchTechnicians();
-          setShowAddModal(false);
-          resetForm();
-        } else {
-          alert(data.message || 'Failed to add technician');
-        }
-      }
-    } catch (error) {
-      console.error('Error saving technician:', error);
-      alert('Failed to save technician');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleToggleStatus = async (technician) => {
-    try {
-      const newStatus = technician.status === 'active' ? 'inactive' : 'active';
-      const res = await fetch(`http://localhost:5000/api/admin/user/${technician.id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        await fetchTechnicians();
-      } else {
-        alert(data.message || 'Failed to update status');
-      }
-    } catch (error) {
-      console.error('Error toggling status:', error);
-      alert('Failed to update status');
-    }
-  };
-
-  const handleConfirmDelete = async () => {
-    setSubmitting(true);
-    try {
-      const res = await fetch(`http://localhost:5000/api/admin/user/${selectedTechnician.id}`, {
+      const response = await fetch(`http://localhost:5000/api/admin/user/${techId}`, {
         method: 'DELETE',
+        headers: getAuthHeaders()
       });
 
-      const data = await res.json();
+      const data = await response.json();
+
       if (data.success) {
-        alert(`${selectedTechnician.name} has been deleted successfully`);
         await fetchTechnicians();
-        setShowDeleteConfirm(false);
-        setSelectedTechnician(null);
+        closeDeleteConfirm();
       } else {
-        alert(data.message || 'Failed to delete technician');
+        setError('Failed to delete technician: ' + data.message);
       }
-    } catch (error) {
-      console.error('Error deleting technician:', error);
-      alert('Failed to delete technician');
+    } catch (err) {
+      setError('Request failed: ' + err.message);
     } finally {
-      setSubmitting(false);
+      setDeletingId(null);
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      technicianId: '',
-      category: '',
-      phone: '',
-      email: '',
-      status: 'Active'
-    });
-    setSelectedTechnician(null);
+  const handleStatusToggle = async (techId, currentStatus) => {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/admin/user/${techId}/status`, {
+        method: 'PUT',
+        headers: getAuthHeaders(true),
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await fetchTechnicians();
+      } else {
+        setError('Failed to update status: ' + data.message);
+      }
+    } catch (err) {
+      setError('Request failed: ' + err.message);
+    }
   };
 
-  const handleCloseModal = () => {
-    setShowAddModal(false);
-    resetForm();
-  };
+  const roles = useMemo(() => {
+    const uniqueRoles = Array.from(new Set(technicians.map((tech) => tech.role)));
+    return ['All', ...uniqueRoles];
+  }, [technicians]);
+
+  const filteredTechnicians = technicians.filter((tech) => {
+    const query = searchTerm.toLowerCase();
+    const searchMatch =
+      tech.name.toLowerCase().includes(query) ||
+      tech.email.toLowerCase().includes(query) ||
+      tech.phone.toLowerCase().includes(query);
+    const roleMatch = roleFilter === 'All' || tech.role === roleFilter;
+    return searchMatch && roleMatch;
+  });
+
+  const isViewMode = modalMode === 'view';
+
+  if (loading) {
+    return (
+      <div className="technicians-page">
+        <div className="loading-state">
+          <div className="spinner"></div>
+          <p>Loading technicians...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="admin-technicians-page">
-      {/* Page Header */}
-      <div className="page-header">
-        <div className="header-content">
-          <h1 className="page-title">Technicians</h1>
-          <p className="page-subtitle">Manage maintenance technicians</p>
+    <div className="technicians-page">
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Admin Technicians</h2>
+          <p>Manage hostel maintenance staff</p>
         </div>
-        <button className="btn-primary btn-add" onClick={handleAddTechnician}>
+        <button className="add-btn page-header-action" onClick={openAddModal}>
           Add Technician
         </button>
       </div>
 
-      {/* Search & Filter Section */}
+      {error && (
+        <div className="error-alert">
+          <p>{error}</p>
+        </div>
+      )}
+
       <div className="search-filter-section">
         <div className="search-box">
-          <span className="search-icon">🔍</span>
           <input
             type="text"
-            placeholder="Search by name or ID..."
-            className="search-input"
+            placeholder="Search by name, email, or phone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
           />
         </div>
-        
-        <select 
-          className="filter-select"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-        >
-          <option value="All">All Categories</option>
-          <option value="Electrical">Electrical</option>
-          <option value="Plumbing">Plumbing</option>
-          <option value="Internet">Internet</option>
-          <option value="Carpentry">Carpentry</option>
-          <option value="Cleaning">Cleaning</option>
-          <option value="Other">Other</option>
-        </select>
 
-        <select 
-          className="filter-select"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="All">All Status</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-        </select>
-      </div>
-
-      {/* Results Info */}
-      <div className="results-info">
-        Showing {filteredTechnicians.length} of {technicians.length} technicians
-      </div>
-
-      {/* Technicians Table or Empty State */}
-      {loading ? (
-        <div className="empty-state-container">
-          <div className="empty-state">
-            <div className="empty-icon">⏳</div>
-            <h3>Loading technicians...</h3>
-            <p>Fetching data from database</p>
-          </div>
+        <div className="role-filter">
+          <select
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+            className="filter-select"
+          >
+            {roles.map((role) => (
+              <option key={role} value={role}>{role}</option>
+            ))}
+          </select>
         </div>
-      ) : filteredTechnicians.length > 0 ? (
-        <div className="table-container">
-          <table className="technicians-table">
-            <thead>
-              <tr>
-                <th>Technician Name</th>
-                <th>Staff ID</th>
-                <th>Email</th>
-                <th>Category / Skill</th>
-                <th>Phone Number</th>
-                <th>Status</th>
-                <th className="actions-column">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTechnicians.map((tech) => (
-                <tr key={tech.id}>
-                  <td>
-                    <div className="tech-cell">
-                      <div className="tech-avatar">
-                        {tech.name.charAt(0)}
+      </div>
+
+      {filteredTechnicians.length > 0 ? (
+        <div>
+          <div className="technicians-table-container technicians-desktop-table">
+            <table className="technicians-table">
+              <thead>
+                <tr>
+                  <th>Staff ID</th>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Complaints</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTechnicians.map((tech) => (
+                  <tr key={tech.id}>
+                    <td className="staff-id-cell" data-label="Staff ID">
+                      <span className="staff-id-badge">{tech.staff_id}</span>
+                    </td>
+                    <td className="cell-name" data-label="Name">
+                      <div className="name-cell">
+                        <div className="avatar">{tech.name.charAt(0)}</div>
+                        <span className="name">{tech.name}</span>
                       </div>
-                      <div className="tech-info">
-                        <div className="tech-name">{tech.name}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="staff-id-cell">{tech.staff_id || 'N/A'}</td>
-                  <td>{tech.email}</td>
-                  <td>
-                    <span className="category-badge">{tech.category || 'General'}</span>
-                  </td>
-                  <td>{tech.phone || 'N/A'}</td>
-                  <td>
-                    <span className={`status-badge ${tech.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
-                      {tech.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
-                    </span>
-                  </td>
-                  <td className="actions-column">
-                    <div className="actions-cell">
-                      <button 
+                    </td>
+                    <td data-label="Role">
+                      <span className="role-badge">{tech.role}</span>
+                    </td>
+                    <td data-label="Phone">{tech.phone}</td>
+                    <td className="email-cell" data-label="Email">{tech.email}</td>
+                    <td data-label="Complaints">
+                      <span className="complaint-badge">{tech.assignedComplaints}</span>
+                    </td>
+                    <td data-label="Status">
+                      <span className={`status-badge ${tech.status.toLowerCase()}`}>
+                        {tech.status}
+                      </span>
+                    </td>
+                    <td className="actions-cell" data-label="Actions">
+                      <button
                         className="btn-action btn-view"
-                        onClick={() => handleViewProfile(tech)}
-                        title="View Profile"
+                        onClick={() => openViewModal(tech)}
+                        title="View details"
                       >
-                        👁️
+                        {'\u{1F441}\uFE0F'}
                       </button>
-                      <button 
+                      <button
                         className="btn-action btn-edit"
-                        onClick={() => handleEditTechnician(tech)}
-                        title="Edit"
+                        onClick={() => openEditModal(tech)}
+                        title="Edit technician"
                       >
-                        ✏️
+                        {'\u{1F58A}\uFE0F'}
                       </button>
-                      <button 
+                      <button
                         className="btn-action btn-password"
-                        onClick={() => handleChangePasswordClick(tech)}
+                        onClick={() => openPasswordModal(tech)}
                         title="Change Password"
                       >
-                        🔐
+                        {'\u{1F512}'}
                       </button>
-                      <button 
-                        className={`btn-action ${tech.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
-                        onClick={() => handleToggleStatus(tech)}
-                        title={tech.status === 'active' ? 'Deactivate' : 'Activate'}
+                      <button
+                        className="btn-action btn-status"
+                        onClick={() => handleStatusToggle(tech.id, tech.status.toLowerCase())}
+                        title={tech.status === 'Active' ? 'Deactivate' : 'Activate'}
                       >
-                        {tech.status === 'active' ? '⏸️' : '▶️'}
+                        {tech.status === 'Active' ? '\u{1F534}' : '\u{1F7E2}'}
                       </button>
-                      <button 
+                      <button
                         className="btn-action btn-delete"
-                        onClick={() => handleDeleteClick(tech)}
-                        title="Delete"
+                        onClick={() => openDeleteConfirm(tech)}
+                        title="Delete technician"
+                        disabled={deletingId === tech.id}
                       >
-                        🗑️
+                        {deletingId === tech.id ? '...' : '\u{1F5D1}\uFE0F'}
                       </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="technicians-card-grid technicians-mobile-cards">
+            {filteredTechnicians.map((tech) => (
+              <article key={tech.id} className="technician-card">
+                <div className="technician-card-header">
+                  <div className="name-cell">
+                    <div className="avatar">{tech.name.charAt(0)}</div>
+                    <div className="tech-name-stack">
+                      <span className="name">{tech.name}</span>
+                      <div className="tech-id-status-row">
+                        <span className="staff-id-badge">{tech.staff_id}</span>
+                        <span className={`status-badge ${tech.status.toLowerCase()}`}>
+                          {tech.status}
+                        </span>
+                      </div>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+
+                <div className="technician-card-details">
+                  <div className="tech-detail-row">
+                    <span className="tech-detail-label">Role</span>
+                    <span className="role-badge">{tech.role}</span>
+                  </div>
+                  <div className="tech-detail-row">
+                    <span className="tech-detail-label">Phone</span>
+                    <span>{tech.phone}</span>
+                  </div>
+                  <div className="tech-detail-row">
+                    <span className="tech-detail-label">Email</span>
+                    <span className="email-cell">{tech.email}</span>
+                  </div>
+                  <div className="tech-detail-row">
+                    <span className="tech-detail-label">Complaints</span>
+                    <span className="complaint-badge">{tech.assignedComplaints}</span>
+                  </div>
+                </div>
+
+                <div className="actions-cell tech-card-actions">
+                  <button
+                    className="tech-action-btn tech-action-view"
+                    onClick={() => openViewModal(tech)}
+                    aria-label="View technician details"
+                    title="View details"
+                  >
+                    {'\u{1F441}\uFE0F'}
+                  </button>
+                  <button
+                    className="tech-action-btn tech-action-edit"
+                    onClick={() => openEditModal(tech)}
+                    aria-label="Edit technician"
+                    title="Edit technician"
+                  >
+                    {'\u{1F58A}\uFE0F'}
+                  </button>
+                  <button
+                    className="tech-action-btn tech-action-password"
+                    onClick={() => openPasswordModal(tech)}
+                    aria-label="Change technician password"
+                    title="Change Password"
+                  >
+                    {'\u{1F512}'}
+                  </button>
+                  <button
+                    className="tech-action-btn tech-action-toggle"
+                    onClick={() => handleStatusToggle(tech.id, tech.status.toLowerCase())}
+                    aria-label={tech.status === 'Active' ? 'Deactivate technician' : 'Activate technician'}
+                    title={tech.status === 'Active' ? 'Deactivate' : 'Activate'}
+                  >
+                    {tech.status === 'Active' ? '\u{1F534}' : '\u{1F7E2}'}
+                  </button>
+                  <button
+                    className="tech-action-btn tech-action-delete"
+                    onClick={() => openDeleteConfirm(tech)}
+                    aria-label="Delete technician"
+                    title="Delete technician"
+                    disabled={deletingId === tech.id}
+                  >
+                    {deletingId === tech.id ? '...' : '\u{1F5D1}\uFE0F'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       ) : (
-        <div className="empty-state-container">
-          <div className="empty-state">
-            <div className="empty-icon">🧑‍🔧</div>
-            <h3>No technicians found</h3>
-            <p>
-              {searchTerm || categoryFilter !== 'All' || statusFilter !== 'All'
-                ? 'Try adjusting your filters'
-                : 'No technicians added yet'}
-            </p>
+        <div className="empty-state">
+          <div className="empty-icon">TECH</div>
+          <h3>No technicians found</h3>
+          <p>{searchTerm || roleFilter !== 'All' ? 'No technicians match your search or filter.' : 'No technicians available. Add one to get started.'}</p>
+          <button className="add-btn" onClick={openAddModal}>Add First Technician</button>
+        </div>
+      )}
+
+      {showModal && (
+        <div className="modal-overlay technician-modal-overlay" onClick={closeModal}>
+          <div
+            className={`modal-content technician-modal ${isViewMode ? 'view-mode' : ''} ${modalMode !== 'add' ? 'corner-close-modal' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h2 className="modal-title">{modalMode === 'add' ? 'Add New Technician' : modalMode === 'edit' ? 'Edit Technician' : 'Technician Details'}</h2>
+              <button className="modal-close close-btn" onClick={closeModal}>x</button>
+            </div>
+            {isViewMode ? (
+              <>
+                <div className="modal-body">
+                  <div className="tech-view-grid">
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Name</div>
+                      <div className="tech-view-value">{formData.name || 'N/A'}</div>
+                    </div>
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Email</div>
+                      <div className="tech-view-value">{formData.email || 'N/A'}</div>
+                    </div>
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Staff ID</div>
+                      <div className="tech-view-value">{formData.staff_id || 'N/A'}</div>
+                    </div>
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Specialization</div>
+                      <div className="tech-view-value">{formData.specialization || 'N/A'}</div>
+                    </div>
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Phone</div>
+                      <div className="tech-view-value">{formData.phone || 'N/A'}</div>
+                    </div>
+                    <div className="tech-view-item">
+                      <div className="tech-view-label">Availability</div>
+                      <div className="tech-view-value">{formData.availability_status || 'N/A'}</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn-secondary" onClick={closeModal}>
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={handleSubmit} className="modal-body">
+                {formError && <div className="form-error">{formError}</div>}
+
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Email *</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </div>
+
+                  {modalMode === 'add' ? (
+                    <>
+                      <div className="form-group">
+                        <label>Password *</label>
+                        <input
+                          type="password"
+                          name="password"
+                          value={formData.password}
+                          onChange={handleInputChange}
+                          required
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div className="form-group">
+                    <label>Specialization *</label>
+                    <select
+                      name="specialization"
+                      value={formData.specialization}
+                      onChange={handleInputChange}
+                      required
+                    >
+                      <option value="">Select Specialization</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Plumbing">Plumbing</option>
+                      <option value="Carpentry">Carpentry</option>
+                      <option value="HVAC">HVAC (Heating/Cooling)</option>
+                      <option value="WiFi">WiFi</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Phone *</label>
+                    <input
+                      type="tel"
+                      name="phone"
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Availability Status</label>
+                    <select
+                      name="availability_status"
+                      value={formData.availability_status}
+                      onChange={handleInputChange}
+                    >
+                      <option value="available">Available</option>
+                      <option value="busy">Busy</option>
+                      <option value="on_leave">On Leave</option>
+                      <option value="off_duty">Off Duty</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button type="button" className="btn-secondary" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={submitting}>
+                    {submitting && <span className="btn-spinner" />}
+                    {submitting ? 'Saving...' : (modalMode === 'add' ? 'Add Technician' : 'Save Changes')}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
 
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <div className="modal-overlay" onClick={handleCloseModal}>
-          <div className="modal-content modal-lg" onClick={(e) => e.stopPropagation()}>
+      {deleteConfirm.open && (
+        <div className="modal-overlay technician-modal-overlay" onClick={closeDeleteConfirm}>
+          <div
+            className="modal-content technician-modal"
+            style={{ maxWidth: '460px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h2>{selectedTechnician ? 'Edit Technician' : 'Add Technician'}</h2>
-              <button className="btn-close" onClick={handleCloseModal}>×</button>
+              <h2 className="modal-title">Delete Technician</h2>
+              <button className="modal-close close-btn" onClick={closeDeleteConfirm}>x</button>
             </div>
             <div className="modal-body">
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label>Name *</label>
-                  <input
-                    type="text"
-                    name="name"
-                    className="form-input"
-                    value={formData.name}
-                    onChange={handleFormChange}
-                    placeholder="Enter technician name"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Technician ID</label>
-                  <input
-                    type="text"
-                    name="technicianId"
-                    className="form-input"
-                    value={formData.technicianId}
-                    onChange={handleFormChange}
-                    placeholder="Auto-generated"
-                    disabled={!!selectedTechnician}
-                  />
-                </div>
-              </div>
-              
-              <div className="form-group">
-                <label>Category / Skill *</label>
-                <select
-                  name="category"
-                  className="form-select"
-                  value={formData.category}
-                  onChange={handleFormChange}
-                >
-                  <option value="">Select Category</option>
-                  <option value="Electrical">Electrical</option>
-                  <option value="Plumbing">Plumbing</option>
-                  <option value="Internet">Internet</option>
-                  <option value="Carpentry">Carpentry</option>
-                  <option value="Cleaning">Cleaning</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div className="form-group-row">
-                <div className="form-group">
-                  <label>Phone Number *</label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    className="form-input"
-                    value={formData.phone}
-                    onChange={handleFormChange}
-                    placeholder="+91 XXXXX XXXXX"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Email (Optional)</label>
-                  <input
-                    type="email"
-                    name="email"
-                    className="form-input"
-                    value={formData.email}
-                    onChange={handleFormChange}
-                    placeholder="email@example.com"
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Status</label>
-                <select
-                  name="status"
-                  className="form-select"
-                  value={formData.status}
-                  onChange={handleFormChange}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={handleCloseModal}>
-                Cancel
-              </button>
-              <button 
-                className="btn-primary" 
-                onClick={handleSaveTechnician}
-                disabled={!formData.name || !formData.category || !formData.phone}
-              >
-                {selectedTechnician ? 'Update Technician' : 'Add Technician'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* View Profile Modal */}
-      {showProfileModal && selectedTechnician && (
-        <div className="modal-overlay" onClick={() => setShowProfileModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Technician Profile</h2>
-              <button className="btn-close" onClick={() => setShowProfileModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="profile-section">
-                <div className="profile-avatar-large">
-                  {selectedTechnician.name.charAt(0)}
-                </div>
-                <div className="profile-main-info">
-                  <h3>{selectedTechnician.name}</h3>
-                  <p className="profile-id">Staff ID: {selectedTechnician.staff_id || 'N/A'}</p>
-                  <span className={`status-badge ${selectedTechnician.status === 'Active' ? 'badge-active' : 'badge-inactive'}`}>
-                    {selectedTechnician.status}
-                  </span>
-                </div>
-              </div>
-              
-              <div className="profile-details">
-                <div className="detail-row">
-                  <span className="detail-label">Category / Skill</span>
-                  <span className="detail-value">{selectedTechnician.category}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Phone</span>
-                  <span className="detail-value">{selectedTechnician.phone}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Email</span>
-                  <span className="detail-value">{selectedTechnician.email}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Assigned Complaints</span>
-                  <span className="detail-value">{selectedTechnician.assignedComplaints} active</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Complaints Resolved</span>
-                  <span className="detail-value">{selectedTechnician.complaintsResolved} total</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Joining Date</span>
-                  <span className="detail-value">
-                    {new Date(selectedTechnician.joiningDate).toLocaleDateString('en-GB', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowProfileModal(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && selectedTechnician && (
-        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
-          <div className="modal-content modal-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Confirm Delete</h2>
-              <button className="btn-close" onClick={() => setShowDeleteConfirm(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <div className="confirm-icon">⚠️</div>
-              <p className="confirm-text">
-                Are you sure you want to remove <strong>{selectedTechnician.name}</strong> from technicians?
+              <p style={{ margin: 0, color: '#334155', lineHeight: 1.6 }}>
+                Are you sure you want to delete <strong>{deleteConfirm.name}</strong>? This action cannot be undone.
               </p>
-              <p className="confirm-subtext">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowDeleteConfirm(false)}>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={closeDeleteConfirm}
+                disabled={deletingId === deleteConfirm.id}
+              >
                 Cancel
               </button>
-              <button className="btn-danger" onClick={handleConfirmDelete}>
-                Delete Technician
+              <button
+                type="button"
+                className="btn-primary"
+                style={{ background: '#dc2626', color: '#fff' }}
+                onClick={() => handleDelete(deleteConfirm.id)}
+                disabled={deletingId === deleteConfirm.id}
+              >
+                {deletingId === deleteConfirm.id ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Change Password Modal */}
-      {showPasswordModal && selectedTechnician && (
-        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
-          <div className="modal-content modal-sm" onClick={(e) => e.stopPropagation()}>
+      {showPasswordModal && selectedTech && (
+        <div className="modal-overlay technician-modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal-content technician-modal" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Change Password</h2>
-              <button className="btn-close" onClick={() => setShowPasswordModal(false)}>✕</button>
+              <h2 className="modal-title">Change Password</h2>
+              <button className="modal-close close-btn" onClick={() => setShowPasswordModal(false)}>x</button>
             </div>
-
             <div className="modal-body">
-              <p className="modal-info">Changing password for: <strong>{selectedTechnician.name}</strong></p>
-              
+              <p style={{ marginTop: 0, marginBottom: '12px', color: '#334155' }}>
+                Changing password for <strong>{selectedTech.name}</strong>
+              </p>
+              {passwordError && <div className="form-error">{passwordError}</div>}
+
               <div className="form-group">
                 <label>New Password</label>
                 <input
                   type="password"
-                  className="form-input"
                   name="password"
                   value={passwordFormData.password}
                   onChange={handlePasswordFormChange}
@@ -659,33 +766,53 @@ const AdminTechnicians = () => {
                 <label>Confirm Password</label>
                 <input
                   type="password"
-                  className="form-input"
                   name="confirmPassword"
                   value={passwordFormData.confirmPassword}
                   onChange={handlePasswordFormChange}
                   placeholder="Re-enter password"
                 />
               </div>
-
-              {passwordFormData.password && passwordFormData.confirmPassword && passwordFormData.password !== passwordFormData.confirmPassword && (
-                <div className="error-message">Passwords do not match</div>
-              )}
             </div>
-
             <div className="modal-footer">
-              <button 
-                className="btn-secondary" 
+              <button
+                type="button"
+                className="btn-secondary"
                 onClick={() => setShowPasswordModal(false)}
                 disabled={submitting}
               >
                 Cancel
               </button>
-              <button 
-                className="btn-primary" 
-                onClick={handleChangePassword}
-                disabled={submitting || !passwordFormData.password || !passwordFormData.confirmPassword}
-              >
+              <button type="button" className="btn-primary" onClick={requestPasswordChange} disabled={submitting}>
                 {submitting ? 'Changing...' : 'Change Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordConfirm && selectedTech && (
+        <div className="modal-overlay technician-modal-overlay" onClick={() => setShowPasswordConfirm(false)}>
+          <div className="modal-content technician-modal" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Confirm Password Change</h2>
+              <button className="modal-close close-btn" onClick={() => setShowPasswordConfirm(false)}>x</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ margin: 0, color: '#334155', lineHeight: 1.6 }}>
+                Change password for <strong>{selectedTech.name}</strong>?
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setShowPasswordConfirm(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button type="button" className="btn-primary" onClick={handlePasswordChange} disabled={submitting}>
+                {submitting ? 'Changing...' : 'Confirm'}
               </button>
             </div>
           </div>
@@ -696,7 +823,3 @@ const AdminTechnicians = () => {
 };
 
 export default AdminTechnicians;
-
-
-
-

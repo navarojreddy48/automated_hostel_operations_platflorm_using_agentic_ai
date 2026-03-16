@@ -31,7 +31,6 @@ import Technicians from './pages/warden/Technicians';
 import WardenStudents from './pages/warden/WardenStudents';
 import WardenAgenticAlerts from './pages/warden/WardenAgenticAlerts';
 import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminUsers from './pages/admin/AdminUsers';
 import AdminWardens from './pages/admin/AdminWardens';
 import AdminStudents from './pages/admin/AdminStudents';
 import AdminRegistrations from './pages/admin/AdminRegistrations';
@@ -133,7 +132,6 @@ function App() {
         <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><AdminLayout /></ProtectedRoute>}>
           <Route index element={<AdminDashboard />} />
           <Route path="dashboard" element={<AdminDashboard />} />
-          <Route path="users" element={<AdminUsers />} />
           <Route path="wardens" element={<AdminWardens />} />
           <Route path="students" element={<AdminStudents />} />
           <Route path="registrations" element={<AdminRegistrations />} />

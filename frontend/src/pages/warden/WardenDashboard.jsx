@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getAuthHeaders, getCurrentUser } from '../../utils/auth';
 import '../../styles/warden-dashboard.css';
 
 const WardenDashboard = () => {
   const navigate = useNavigate();
+  const currentUser = getCurrentUser();
+  const wardenName = currentUser?.name?.trim() || 'Warden';
   const [activeTab, setActiveTab] = useState('outpass');
   const [pendingOutpass, setPendingOutpass] = useState(0);
   const [outpasses, setOutpasses] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState(0);
   const [activeComplaints, setActiveComplaints] = useState(0);
-  const [occupancyPercentage, setOccupancyPercentage] = useState(0);
-  const [totalStudents, setTotalStudents] = useState(0);
-  const [totalRooms, setTotalRooms] = useState(0);
   const [loading, setLoading] = useState(true);
   const [greeting, setGreeting] = useState('');
   const [recentActivities, setRecentActivities] = useState([]);
@@ -35,7 +35,9 @@ const WardenDashboard = () => {
         setLoading(true);
         
         // Fetch pending outpasses
-        const outpassRes = await fetch('http://localhost:5000/api/warden/outpasses/pending');
+        const outpassRes = await fetch('http://localhost:5000/api/warden/outpasses/pending', {
+          headers: getAuthHeaders()
+        });
         const outpassData = await outpassRes.json();
         if (outpassData.success && Array.isArray(outpassData.data)) {
           setOutpasses(outpassData.data);
@@ -43,25 +45,28 @@ const WardenDashboard = () => {
         }
         
         // Fetch recent activities
-        const activitiesRes = await fetch('http://localhost:5000/api/warden/recent-activities');
+        const activitiesRes = await fetch('http://localhost:5000/api/warden/recent-activities', {
+          headers: getAuthHeaders()
+        });
         const activitiesData = await activitiesRes.json();
         if (activitiesData.success && Array.isArray(activitiesData.data)) {
           setRecentActivities(activitiesData.data);
         }
 
-        const securityRes = await fetch('http://localhost:5000/api/warden/security/agentic-monitor');
+        const securityRes = await fetch('http://localhost:5000/api/warden/security/agentic-monitor', {
+          headers: getAuthHeaders()
+        });
         const securityData = await securityRes.json();
         if (securityData.success && securityData.data) {
           setSecuritySummary(securityData.data.status_summary || {});
         }
         
         // Fetch warden dashboard stats for summary
-        const dashRes = await fetch('http://localhost:5000/api/warden/dashboard');
+        const dashRes = await fetch('http://localhost:5000/api/warden/dashboard', {
+          headers: getAuthHeaders()
+        });
         const dashData = await dashRes.json();
         if (dashData.success && dashData.data) {
-          setOccupancyPercentage(dashData.data.total_rooms > 0 ? Math.round((dashData.data.occupied_rooms / dashData.data.total_rooms) * 100) : 0);
-          setTotalStudents(dashData.data.total_students || 0);
-          setTotalRooms(dashData.data.total_rooms || 0);
           setLeaveRequests(dashData.data.pending_leaves || 0);
           setActiveComplaints(dashData.data.active_complaints || 0);
         }
@@ -79,12 +84,12 @@ const WardenDashboard = () => {
 
   return (
     <div>
-      <header className="warden-header">
-        <div>
-          <h1 className="warden-welcome">{greeting}, Warden 👋</h1>
+      <header className="page-header-card">
+        <div className="page-header-text">
+          <h1 className="warden-welcome">{greeting}, {wardenName} 👋</h1>
           <p className="warden-sub">Here's what's happening in your hostel today</p>
         </div>
-        <div className="header-actions">
+        <div className="page-header-action-group">
           <div className="last-updated">Last updated: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</div>
         </div>
       </header>
@@ -128,14 +133,6 @@ const WardenDashboard = () => {
           <div className="monitor-icon">🛡️</div>
         </div>
 
-        <div className="monitor-card green" onClick={() => navigate('/warden/rooms')} role="button">
-          <div className="monitor-left">
-            <div className="monitor-title">Room Occupancy</div>
-            <div className="monitor-value">{occupancyPercentage}%</div>
-            <div className="monitor-sub">{totalStudents}/{totalRooms} spaces</div>
-          </div>
-          <div className="monitor-icon">🏠</div>
-        </div>
       </section>
 
       <div className="dashboard-row">
@@ -277,17 +274,17 @@ const WardenDashboard = () => {
                 <p>When students submit outpass requests, they will appear here.</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div className="request-preview-list">
                 {outpasses.slice(0, 5).map(op => (
-                  <div key={op.id} style={{ padding: '1rem', border: '1px solid #e5e7eb', borderRadius: '8px', backgroundColor: '#fafafa' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontWeight: '600' }}>{op.destination}</div>
-                        <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                  <div key={op.id} className="request-preview-card">
+                    <div className="request-preview-card-header">
+                      <div className="request-preview-main">
+                        <div className="request-preview-title">{op.destination}</div>
+                        <div className="request-preview-meta">
                           {op.student_name || 'Student'} - {op.departure_date && new Date(op.departure_date).toLocaleDateString('en-GB')}
                         </div>
                       </div>
-                      <span style={{ padding: '0.5rem 0.75rem', borderRadius: '20px', fontSize: '12px', backgroundColor: '#fef3c7', color: '#92400e' }}>
+                      <span className="request-preview-status">
                         {op.status || 'PENDING'}
                       </span>
                     </div>

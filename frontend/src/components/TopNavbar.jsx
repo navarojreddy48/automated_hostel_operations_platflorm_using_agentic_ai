@@ -41,9 +41,33 @@ const TopNavbar = ({ role }) => {
     };
   }, []);
 
+  useEffect(() => {
+    const hasTopModalOpen = showProfile || showChangePassword;
+
+    if (hasTopModalOpen) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showProfile, showChangePassword]);
+
   return (
     <header className="top-navbar">
       <div className="top-navbar-actions" ref={menuRef}>
+        <button
+          type="button"
+          className="top-navbar-menu-btn"
+          onClick={() => window.dispatchEvent(new Event('hostel:toggle-mobile-sidebar'))}
+          aria-label="Toggle sidebar"
+          title="Toggle sidebar"
+        >
+          ☰
+        </button>
+
         <button
           className="top-navbar-profile-trigger"
           onClick={() => setIsPanelOpen((prev) => !prev)}

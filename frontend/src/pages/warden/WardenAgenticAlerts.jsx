@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getAuthHeaders } from '../../utils/auth';
 import '../../styles/warden-dashboard.css';
 
 const WardenAgenticAlerts = () => {
@@ -7,37 +8,30 @@ const WardenAgenticAlerts = () => {
   const [leaveAlerts, setLeaveAlerts] = useState([]);
   const [securityAlerts, setSecurityAlerts] = useState([]);
   const [securityUnreadCount, setSecurityUnreadCount] = useState(0);
-  const [securityUnreadOnly, setSecurityUnreadOnly] = useState(true);
-  const [securityMonitor, setSecurityMonitor] = useState({ status_summary: {}, weekly_insights: {} });
   const [loading, setLoading] = useState(true);
   const [activeType, setActiveType] = useState('complaints');
   const [showParentDetails, setShowParentDetails] = useState({});
-  const [acknowledgingAlertId, setAcknowledgingAlertId] = useState(null);
-  const [acknowledgingAll, setAcknowledgingAll] = useState(false);
 
   const fetchAlerts = async () => {
     setLoading(true);
     try {
-      const [complaintRes, outpassRes, leaveRes, securityRes, securityMonitorRes] = await Promise.all([
-        fetch('http://localhost:5000/api/warden/complaints/agentic-alerts?limit=100'),
-        fetch('http://localhost:5000/api/warden/outpasses/alerts'),
-        fetch('http://localhost:5000/api/warden/leaves/agentic-alerts?limit=100'),
-        fetch(`http://localhost:5000/api/warden/security/agentic-alerts?limit=100&unread_only=${securityUnreadOnly}`),
-        fetch('http://localhost:5000/api/warden/security/agentic-monitor')
+      const [complaintRes, outpassRes, leaveRes, securityRes] = await Promise.all([
+        fetch('http://localhost:5000/api/warden/complaints/agentic-alerts?limit=100', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/outpasses/alerts', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/leaves/agentic-alerts?limit=100', { headers: getAuthHeaders() }),
+        fetch('http://localhost:5000/api/warden/security/agentic-alerts?limit=100&unread_only=false', { headers: getAuthHeaders() })
       ]);
 
       const complaintData = await complaintRes.json();
       const outpassData = await outpassRes.json();
       const leaveData = await leaveRes.json();
       const securityData = await securityRes.json();
-      const securityMonitorData = await securityMonitorRes.json();
 
       setComplaintAlerts(Array.isArray(complaintData.data) ? complaintData.data : []);
       setOutpassAlerts(Array.isArray(outpassData.data) ? outpassData.data : []);
       setLeaveAlerts(Array.isArray(leaveData.data) ? leaveData.data : []);
       setSecurityAlerts(Array.isArray(securityData.data) ? securityData.data : []);
       setSecurityUnreadCount(Number(securityData.unread_count) || 0);
-      setSecurityMonitor(securityMonitorData?.data || { status_summary: {}, weekly_insights: {} });
     } catch (error) {
       console.error('Error fetching agentic AI alerts:', error);
       setComplaintAlerts([]);
@@ -45,7 +39,6 @@ const WardenAgenticAlerts = () => {
       setLeaveAlerts([]);
       setSecurityAlerts([]);
       setSecurityUnreadCount(0);
-      setSecurityMonitor({ status_summary: {}, weekly_insights: {} });
     } finally {
       setLoading(false);
     }
@@ -55,52 +48,10 @@ const WardenAgenticAlerts = () => {
     fetchAlerts();
     const poller = setInterval(fetchAlerts, 60000);
     return () => clearInterval(poller);
-  }, [securityUnreadOnly]);
+  }, []);
 
   const toggleParentDetails = (id) => {
     setShowParentDetails((previous) => ({ ...previous, [id]: !previous[id] }));
-  };
-
-  const acknowledgeSecurityAlert = async (alertId) => {
-    try {
-      setAcknowledgingAlertId(alertId);
-      const response = await fetch(`http://localhost:5000/api/warden/security/agentic-alerts/${alertId}/acknowledge`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        alert(data?.message || 'Failed to acknowledge alert');
-        return;
-      }
-      await fetchAlerts();
-    } catch (error) {
-      console.error('Error acknowledging security alert:', error);
-      alert('Failed to acknowledge alert');
-    } finally {
-      setAcknowledgingAlertId(null);
-    }
-  };
-
-  const acknowledgeAllSecurityAlerts = async () => {
-    try {
-      setAcknowledgingAll(true);
-      const response = await fetch('http://localhost:5000/api/warden/security/agentic-alerts/acknowledge-all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        alert(data?.message || 'Failed to acknowledge alerts');
-        return;
-      }
-      await fetchAlerts();
-    } catch (error) {
-      console.error('Error acknowledging all security alerts:', error);
-      alert('Failed to acknowledge alerts');
-    } finally {
-      setAcknowledgingAll(false);
-    }
   };
 
   const alerts = activeType === 'complaints'
@@ -119,9 +70,14 @@ const WardenAgenticAlerts = () => {
 
   return (
     <div className="leave-page">
-      <div className="leave-header">
-        <h1>Agentic AI Alerts</h1>
-        <p>View autonomous alerts for complaints, leaves, outpasses, and security monitoring.</p>
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Agentic AI Alerts</h2>
+          <p>View autonomous alerts for complaints, leaves, outpasses, and security monitoring.</p>
+        </div>
+        <button className="action-btn primary page-header-action" onClick={fetchAlerts} disabled={loading}>
+          {loading ? 'Refreshing...' : 'Refresh Alerts'}
+        </button>
       </div>
 
       <div className="leave-filters" style={{ marginBottom: '16px' }}>
@@ -148,13 +104,6 @@ const WardenAgenticAlerts = () => {
           onClick={() => setActiveType('security')}
         >
           Security Alerts ({securityUnreadCount})
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-        <div className="leave-meta">Total Alerts: {alerts.length}</div>
-        <button className="action-btn primary" onClick={fetchAlerts} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh Alerts'}
         </button>
       </div>
 
@@ -219,49 +168,6 @@ const WardenAgenticAlerts = () => {
             ))
           ) : activeType === 'security' ? (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className={`filter-btn ${securityUnreadOnly ? 'active' : ''}`}
-                    onClick={() => setSecurityUnreadOnly(true)}
-                  >
-                    Unread Only
-                  </button>
-                  <button
-                    className={`filter-btn ${!securityUnreadOnly ? 'active' : ''}`}
-                    onClick={() => setSecurityUnreadOnly(false)}
-                  >
-                    All Alerts
-                  </button>
-                </div>
-                <button
-                  className="action-btn primary"
-                  onClick={acknowledgeAllSecurityAlerts}
-                  disabled={acknowledgingAll || securityAlerts.length === 0}
-                >
-                  {acknowledgingAll ? 'Acknowledging...' : 'Acknowledge All'}
-                </button>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '12px' }}>
-                <div className="leave-reason" style={{ marginBottom: 0 }}>
-                  <div className="leave-label">Missing Students</div>
-                  <div className="leave-value">{securityMonitor?.status_summary?.missing_students || 0}</div>
-                </div>
-                <div className="leave-reason" style={{ marginBottom: 0 }}>
-                  <div className="leave-label">Late Returns</div>
-                  <div className="leave-value">{securityMonitor?.status_summary?.late_returns || 0}</div>
-                </div>
-                <div className="leave-reason" style={{ marginBottom: 0 }}>
-                  <div className="leave-label">Unauthorized Attempts</div>
-                  <div className="leave-value">{securityMonitor?.status_summary?.unauthorized_exit_attempts || 0}</div>
-                </div>
-                <div className="leave-reason" style={{ marginBottom: 0 }}>
-                  <div className="leave-label">High-Risk Students</div>
-                  <div className="leave-value">{securityMonitor?.status_summary?.high_risk_students || 0}</div>
-                </div>
-              </div>
-
               {alerts.map((alert) => (
                 <article className="leave-card" key={alert.id}>
                   <div className="leave-card-top">
@@ -303,16 +209,6 @@ const WardenAgenticAlerts = () => {
                       <div className="leave-label">Updated At</div>
                       <div className="leave-value">{alert.updated_at ? new Date(alert.updated_at).toLocaleString() : 'N/A'}</div>
                     </div>
-                  </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
-                    <button
-                      className="action-btn primary"
-                      onClick={() => acknowledgeSecurityAlert(alert.id)}
-                      disabled={acknowledgingAlertId === alert.id || alert.is_read === 1}
-                    >
-                      {alert.is_read === 1 ? 'Acknowledged' : acknowledgingAlertId === alert.id ? 'Acknowledging...' : 'Acknowledge'}
-                    </button>
                   </div>
                 </article>
               ))}

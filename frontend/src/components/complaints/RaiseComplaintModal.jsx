@@ -12,7 +12,6 @@ const RaiseComplaintModal = ({ onClose, onSubmit, roomNumber, blockInfo = {} }) 
     description: '',
     block_id: blockInfo?.blockId || null,
     block_name: blockInfo?.blockName || '',
-    attachmentName: null,
   });
 
   const [errors, setErrors] = useState({});
@@ -60,16 +59,6 @@ const RaiseComplaintModal = ({ onClose, onSubmit, roomNumber, blockInfo = {} }) 
       ...prev,
       [name]: '',
     }));
-  };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setFormData((prev) => ({
-        ...prev,
-        attachmentName: file.name,
-      }));
-    }
   };
 
   const validateStep1 = () => {
@@ -217,18 +206,6 @@ const RaiseComplaintModal = ({ onClose, onSubmit, roomNumber, blockInfo = {} }) 
                 {errors.description && <div className="error-message">{errors.description}</div>}
               </div>
 
-              <div className="form-group">
-                <label>Attach Image (Optional)</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileSelect}
-                  className="file-input"
-                />
-                {formData.attachmentName && (
-                  <div className="file-preview">📎 {formData.attachmentName}</div>
-                )}
-              </div>
             </div>
           )}
 
@@ -256,12 +233,6 @@ const RaiseComplaintModal = ({ onClose, onSubmit, roomNumber, blockInfo = {} }) 
                   <span className="review-label">Description:</span>
                   <span className="review-value">{formData.description}</span>
                 </div>
-                {formData.attachmentName && (
-                  <div className="review-item">
-                    <span className="review-label">Attachment:</span>
-                    <span className="review-value">📎 {formData.attachmentName}</span>
-                  </div>
-                )}
               </div>
 
               <div className="warning-message">

@@ -10,7 +10,7 @@ const WardenLayout = () => {
       <div className="warden-layout">
         <Sidebar role="warden" />
         <TopNavbar role="warden" />
-        <main className="warden-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+        <main className="warden-main">
           <Outlet />
         </main>
       </div>

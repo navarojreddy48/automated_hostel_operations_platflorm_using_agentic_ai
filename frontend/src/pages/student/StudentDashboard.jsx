@@ -266,10 +266,11 @@ const StudentDashboard = () => {
   };
 
   return (
-    <main className="student-main">
+    <div className="dashboard-page student-main">
+      <div className="main-content">
       <div className="dashboard-header">
         <div className="header-row">
-          <div>
+          <div className="welcome-card">
             <h1 className="welcome">Welcome back, {studentProfile?.name || 'Student'}!</h1>
             <p className="subtext">Here's what's happening with your hostel stay</p>
           </div>
@@ -415,7 +416,8 @@ const StudentDashboard = () => {
               </ul>
             )}
           </section>
-      </main>
+      </div>
+    </div>
   );
 };
 

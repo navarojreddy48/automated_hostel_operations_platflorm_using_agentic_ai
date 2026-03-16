@@ -1,7 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { getAuthHeaders, getCurrentUser } from '../../utils/auth';
 import '../../styles/admin-students.css';
 
 const WardenStudents = () => {
+  const getStudentUserId = (student) => student?.user_id || student?.id;
+  const getRoleAwareEndpoints = () => {
+    const role = (getCurrentUser()?.role || '').toLowerCase();
+    const isWarden = role === 'warden';
+    return {
+      students: isWarden
+        ? 'http://localhost:5000/api/warden/students'
+        : 'http://localhost:5000/api/admin/users?role=student',
+      blocks: isWarden
+        ? 'http://localhost:5000/api/warden/hostel-blocks'
+        : 'http://localhost:5000/api/admin/hostel-blocks',
+      rooms: (blockId) => isWarden
+        ? `http://localhost:5000/api/warden/rooms/${blockId}`
+        : `http://localhost:5000/api/admin/rooms/${blockId}`
+    };
+  };
+
   // State for students data from database
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +40,14 @@ const WardenStudents = () => {
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:5000/api/warden/students');
+      const headers = getAuthHeaders();
+      if (!headers['X-User-Id']) {
+        setLoading(false);
+        return;
+      }
+
+      const endpoints = getRoleAwareEndpoints();
+      const res = await fetch(endpoints.students, { headers });
       const data = await res.json();
       
       if (data.success && Array.isArray(data.data)) {
@@ -37,7 +62,13 @@ const WardenStudents = () => {
 
   const fetchHostelBlocks = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/admin/hostel-blocks');
+      const headers = getAuthHeaders();
+      if (!headers['X-User-Id']) {
+        return;
+      }
+
+      const endpoints = getRoleAwareEndpoints();
+      const res = await fetch(endpoints.blocks, { headers });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setHostelBlocks(data.data);
@@ -55,7 +86,14 @@ const WardenStudents = () => {
     
     setRoomLoading(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/rooms/${blockId}`);
+      const headers = getAuthHeaders();
+      if (!headers['X-User-Id']) {
+        setRoomLoading(false);
+        return;
+      }
+
+      const endpoints = getRoleAwareEndpoints();
+      const res = await fetch(endpoints.rooms(blockId), { headers });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
         setAvailableRooms(data.data);
@@ -98,6 +136,9 @@ const WardenStudents = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false);
+  const [showStatusConfirm, setShowStatusConfirm] = useState(false);
+  const [pendingStatusStudent, setPendingStatusStudent] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState(null);
   // In-modal message state
   const [modalMessage, setModalMessage] = useState(null);
@@ -201,6 +242,7 @@ const WardenStudents = () => {
   const handleChangePasswordClick = (student) => {
     setSelectedStudent(student);
     setPasswordFormData({ password: '', confirmPassword: '' });
+    setShowPasswordConfirm(false);
     setShowPasswordModal(true);
   };
 
@@ -212,7 +254,7 @@ const WardenStudents = () => {
     }));
   };
 
-  const handleChangePassword = async () => {
+  const handleRequestPasswordChange = () => {
     if (!passwordFormData.password || !passwordFormData.confirmPassword) {
       showMessage('Please enter password in both fields', 'error');
       return;
@@ -228,22 +270,36 @@ const WardenStudents = () => {
       return;
     }
 
-    if (!confirm(`Change password for ${selectedStudent.name}?`)) {
-      return;
-    }
+    setShowPasswordConfirm(true);
+  };
+
+  const handleChangePassword = async () => {
 
     setSubmitting(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/user/${selectedStudent.id}/password`, {
+      const userId = getStudentUserId(selectedStudent);
+      const payload = JSON.stringify({ password: passwordFormData.password });
+
+      let res = await fetch(`http://localhost:5000/api/warden/user/${userId}/password`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: passwordFormData.password })
+        headers: getAuthHeaders(true),
+        body: payload
       });
-      
+
+      // Fallback only for admin sessions that can use admin-scoped endpoints.
+      if (res.status === 403 && (getCurrentUser()?.role || '').toLowerCase() === 'admin') {
+        res = await fetch(`http://localhost:5000/api/admin/user/${userId}/password`, {
+          method: 'PUT',
+          headers: getAuthHeaders(true),
+          body: payload
+        });
+      }
+
       const data = await res.json();
       
       if (data.success) {
         showMessage(data.message, 'success');
+        setShowPasswordConfirm(false);
         setShowPasswordModal(false);
         setSelectedStudent(null);
         setPasswordFormData({ password: '', confirmPassword: '' });
@@ -259,24 +315,38 @@ const WardenStudents = () => {
   };
 
 
-  const handleToggleStatus = async (student) => {
+  const requestStatusToggle = (student) => {
+    setPendingStatusStudent(student);
+    setShowStatusConfirm(true);
+  };
+
+  const handleToggleStatus = async () => {
+    if (!pendingStatusStudent) {
+      return;
+    }
+
     try {
-      const newStatus = student.status === 'active' ? 'inactive' : 'active';
-      const res = await fetch(`http://localhost:5000/api/admin/user/${student.id}/status`, {
+      const newStatus = pendingStatusStudent.status === 'active' ? 'inactive' : 'active';
+      const res = await fetch(`http://localhost:5000/api/warden/user/${getStudentUserId(pendingStatusStudent)}/status`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ status: newStatus }),
       });
 
       const data = await res.json();
       if (data.success) {
         await fetchStudents(); // Refresh list
+        setShowStatusConfirm(false);
+        setPendingStatusStudent(null);
       } else {
         showMessage(data.message || 'Failed to update status', 'error');
       }
     } catch (error) {
       console.error('Error toggling status:', error);
       showMessage('Failed to update status', 'error');
+    } finally {
+      setShowStatusConfirm(false);
+      setPendingStatusStudent(null);
     }
   };
 
@@ -336,9 +406,9 @@ const WardenStudents = () => {
         payload.roomId = parseInt(formData.room);
       }
 
-      const res = await fetch(`http://localhost:5000/api/admin/user/${selectedStudent.id}`, {
+      const res = await fetch(`http://localhost:5000/api/warden/user/${getStudentUserId(selectedStudent)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify(payload)
       });
 
@@ -363,8 +433,9 @@ const WardenStudents = () => {
   const handleConfirmDelete = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch(`http://localhost:5000/api/admin/user/${selectedStudent.id}`, {
+      const res = await fetch(`http://localhost:5000/api/warden/user/${getStudentUserId(selectedStudent)}`, {
         method: 'DELETE',
+        headers: getAuthHeaders()
       });
 
       const data = await res.json();
@@ -410,10 +481,10 @@ const WardenStudents = () => {
   return (
     <div className="admin-students-page">
       {/* Page Header */}
-      <div className="page-header">
-        <div className="header-content">
-          <h1 className="page-title">Students</h1>
-          <p className="page-subtitle">Manage hostel student accounts</p>
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Students</h2>
+          <p>Manage hostel student accounts</p>
         </div>
       </div>
 
@@ -482,90 +553,172 @@ const WardenStudents = () => {
           </div>
         </div>
       ) : filteredStudents.length > 0 ? (
-        <div className="table-container">
-          <table className="students-table">
-            <thead>
-              <tr>
-                <th>Student Name</th>
-                <th>Roll Number</th>
-                <th>Branch</th>
-                <th>Year</th>
-                <th>Fee Status</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.map((student) => (
-                <tr key={student.id}>
-                  <td>
-                    <div className="student-cell">
-                      <div className="student-avatar">
-                        {student.name.charAt(0)}
-                      </div>
-                      <div className="student-info">
-                        <div className="student-name">{student.name}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="roll-number">{student.roll_number || 'N/A'}</td>
-                  <td>
-                    <span className="branch-badge">{student.branch || 'N/A'}</span>
-                  </td>
-                  <td>{formatYear(student.year)}</td>
-                  <td>
-                    <span className="fee-status-badge">
-                      {student.fee_status || 'N/A'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${student.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
-                      {student.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="actions-cell">
-                      <button 
-                        className="btn-action btn-view"
-                        onClick={() => handleViewProfile(student)}
-                        title="View Profile"
-                      >
-                        👁️
-                      </button>
-                      <button 
-                        className="btn-action btn-edit"
-                        onClick={() => handleEditStudent(student)}
-                        title="Edit"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        className="btn-action btn-password"
-                        onClick={() => handleChangePasswordClick(student)}
-                        title="Change Password"
-                      >
-                        🔐
-                      </button>
-                      <button 
-                        className={`btn-action ${student.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
-                        onClick={() => handleToggleStatus(student)}
-                        title={student.status === 'active' ? 'Deactivate' : 'Activate'}
-                      >
-                        {student.status === 'active' ? '⏸️' : '▶️'}
-                      </button>
-                      <button 
-                        className="btn-action btn-delete"
-                        onClick={() => handleDeleteClick(student)}
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </td>
+        <div>
+          <div className="table-container students-desktop-table">
+            <table className="students-table">
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>Roll Number</th>
+                  <th>Branch</th>
+                  <th>Year</th>
+                  <th>Fee Status</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredStudents.map((student) => (
+                  <tr key={student.id}>
+                    <td>
+                      <div className="student-cell">
+                        <div className="student-avatar">
+                          {student.name.charAt(0)}
+                        </div>
+                        <div className="student-info">
+                          <div className="student-name">{student.name}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="roll-number">{student.roll_number || 'N/A'}</td>
+                    <td>
+                      <span className="branch-badge">{student.branch || 'N/A'}</span>
+                    </td>
+                    <td>{formatYear(student.year)}</td>
+                    <td>
+                      <span className="fee-status-badge">
+                        {student.fee_status || 'N/A'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status-badge ${student.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                        {student.status === 'active' ? '🟢 Active' : '🔴 Inactive'}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="actions-cell">
+                        <button 
+                          className="btn-action btn-view"
+                          onClick={() => handleViewProfile(student)}
+                          title="View Profile"
+                        >
+                          👁️
+                        </button>
+                        <button 
+                          className="btn-action btn-edit"
+                          onClick={() => handleEditStudent(student)}
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button 
+                          className="btn-action btn-password"
+                          onClick={() => handleChangePasswordClick(student)}
+                          title="Change Password"
+                        >
+                          🔐
+                        </button>
+                        <button 
+                          className={`btn-action ${student.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
+                          onClick={() => requestStatusToggle(student)}
+                          title={student.status === 'active' ? 'Deactivate' : 'Activate'}
+                        >
+                          {student.status === 'active' ? '🚫' : '✅'}
+                        </button>
+                        <button 
+                          className="btn-action btn-delete"
+                          onClick={() => handleDeleteClick(student)}
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="students-mobile-cards">
+            {filteredStudents.map((student) => (
+              <article key={student.id} className="student-mobile-card">
+                <div className="student-mobile-header">
+                  <div className="student-cell">
+                    <div className="student-avatar">
+                      {student.name.charAt(0)}
+                    </div>
+                    <div className="student-info">
+                      <div className="student-name">{student.name}</div>
+                      <div className="student-mobile-meta">
+                        <div className="student-id">{student.roll_number || 'N/A'}</div>
+                        <span className={`status-badge ${student.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                          {student.status === 'active' ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="student-mobile-grid">
+                  <div className="student-mobile-item">
+                    <span className="student-mobile-label">Branch</span>
+                    <span className="student-mobile-value"><span className="branch-badge">{student.branch || 'N/A'}</span></span>
+                  </div>
+                  <div className="student-mobile-item">
+                    <span className="student-mobile-label">Year</span>
+                    <span className="student-mobile-value">{formatYear(student.year)}</span>
+                  </div>
+                  <div className="student-mobile-item">
+                    <span className="student-mobile-label">Fee Status</span>
+                    <span className="student-mobile-value"><span className="fee-status-badge">{student.fee_status || 'N/A'}</span></span>
+                  </div>
+                  <div className="student-mobile-item full-width">
+                    <span className="student-mobile-label">Email</span>
+                    <span className="student-mobile-value">{student.email || 'N/A'}</span>
+                  </div>
+                </div>
+
+                <div className="student-mobile-actions">
+                  <button 
+                    className="btn-action btn-view"
+                    onClick={() => handleViewProfile(student)}
+                    title="View Profile"
+                  >
+                    👁️
+                  </button>
+                  <button 
+                    className="btn-action btn-edit"
+                    onClick={() => handleEditStudent(student)}
+                    title="Edit"
+                  >
+                    ✏️
+                  </button>
+                  <button 
+                    className="btn-action btn-password"
+                    onClick={() => handleChangePasswordClick(student)}
+                    title="Change Password"
+                  >
+                    🔐
+                  </button>
+                  <button 
+                    className={`btn-action ${student.status === 'active' ? 'btn-deactivate' : 'btn-activate'}`}
+                    onClick={() => requestStatusToggle(student)}
+                    title={student.status === 'active' ? 'Deactivate' : 'Activate'}
+                  >
+                    {student.status === 'active' ? '🚫' : '✅'}
+                  </button>
+                  <button 
+                    className="btn-action btn-delete"
+                    onClick={() => handleDeleteClick(student)}
+                    title="Delete"
+                  >
+                    🗑️
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="empty-state-container">
@@ -615,8 +768,8 @@ const WardenStudents = () => {
                 <div className="detail-section">
                   <h4>Personal Information</h4>
                   <div className="detail-row">
-                    <span className="detail-label">Student ID</span>
-                    <span className="detail-value">{selectedStudent.id}</span>
+                    <span className="detail-label">Roll Number</span>
+                    <span className="detail-value">{selectedStudent.roll_number || 'N/A'}</span>
                   </div>
                   <div className="detail-row">
                     <span className="detail-label">Email</span>
@@ -637,10 +790,6 @@ const WardenStudents = () => {
                   <div className="detail-row">
                     <span className="detail-label">Year</span>
                     <span className="detail-value">{selectedStudent.year || 'N/A'}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Roll Number</span>
-                    <span className="detail-value">{selectedStudent.roll_number || 'N/A'}</span>
                   </div>
                 </div>
 
@@ -919,7 +1068,15 @@ const WardenStudents = () => {
           <div className="modal-content modal-sm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Change Password</h2>
-              <button className="btn-close" onClick={() => setShowPasswordModal(false)}>✕</button>
+              <button
+                className="btn-close"
+                onClick={() => {
+                  setShowPasswordConfirm(false);
+                  setShowPasswordModal(false);
+                }}
+              >
+                ✕
+              </button>
             </div>
 
             <div className="modal-body">
@@ -963,18 +1120,77 @@ const WardenStudents = () => {
             <div className="modal-footer">
               <button 
                 className="btn-secondary" 
-                onClick={() => setShowPasswordModal(false)}
+                onClick={() => {
+                  setShowPasswordConfirm(false);
+                  setShowPasswordModal(false);
+                }}
                 disabled={submitting}
               >
                 Cancel
               </button>
               <button 
                 className="btn-primary" 
-                onClick={handleChangePassword}
+                onClick={handleRequestPasswordChange}
                 disabled={submitting || !passwordFormData.password || !passwordFormData.confirmPassword}
               >
                 {submitting && <span className="btn-spinner" />}
                 {submitting ? 'Changing...' : 'Change Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasswordConfirm && selectedStudent && (
+        <div className="modal-overlay" onClick={() => setShowPasswordConfirm(false)}>
+          <div className="modal-content modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Confirm Password Change</h2>
+              <button className="btn-close" onClick={() => setShowPasswordConfirm(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="confirm-icon">🔐</div>
+              <p className="confirm-text">
+                Change password for <strong>{selectedStudent.name}</strong>?
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn-secondary"
+                onClick={() => setShowPasswordConfirm(false)}
+                disabled={submitting}
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={handleChangePassword} disabled={submitting}>
+                {submitting && <span className="btn-spinner" />}
+                {submitting ? 'Changing...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStatusConfirm && pendingStatusStudent && (
+        <div className="modal-overlay" onClick={() => setShowStatusConfirm(false)}>
+          <div className="modal-content modal-sm" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Confirm Status Change</h2>
+              <button className="btn-close" onClick={() => setShowStatusConfirm(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="confirm-icon">⚠️</div>
+              <p className="confirm-text">
+                Are you sure you want to {pendingStatusStudent.status === 'active' ? 'deactivate' : 'activate'} <strong>{pendingStatusStudent.name}</strong>?
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn-secondary" onClick={() => setShowStatusConfirm(false)} disabled={submitting}>
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={handleToggleStatus} disabled={submitting}>
+                {submitting && <span className="btn-spinner" />}
+                {submitting ? 'Updating...' : 'Confirm'}
               </button>
             </div>
           </div>

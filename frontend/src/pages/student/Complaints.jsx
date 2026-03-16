@@ -126,10 +126,15 @@ const Complaints = () => {
   return (
     <>
       <div className="leave-page">
-        <div className="leave-header">
-          <h1>Maintenance Complaints</h1>
-          <p>Track and manage your hostel maintenance issues</p>
-        </div>
+        <header className="page-header-card leave-header">
+          <div className="page-header-text">
+            <h2>Maintenance Complaints</h2>
+            <p>Track and manage your hostel maintenance issues</p>
+          </div>
+          <button className="primary-action-btn complaints-raise-btn" onClick={() => setShowModal(true)}>
+            + Raise Complaint
+          </button>
+        </header>
 
         <div className="complaints-actions">
           <div className="leave-filters">
@@ -152,9 +157,6 @@ const Complaints = () => {
               Resolved ({resolvedCount})
             </button>
           </div>
-          <button className="complaints-raise-btn" onClick={() => setShowModal(true)}>
-            + Raise Complaint
-          </button>
         </div>
 
         {loading ? (

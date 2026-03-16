@@ -11,6 +11,35 @@ const api = axios.create({
   }
 });
 
+const OFFLINE_DEMO_USERS = [
+  { identifier: '23R21A6675', password: 'sathwik', userId: 101, name: 'Demo Student', role: 'student', rollNumber: '23R21A6675' },
+  { identifier: 'student@hostel.edu', password: 'student123', userId: 102, name: 'Demo Student', role: 'student', rollNumber: '23R21A6675' },
+  { identifier: 'warden@hostel.edu', password: 'warden123', userId: 103, name: 'Demo Warden', role: 'warden', staffId: 'WRD001' },
+  { identifier: 'admin@hostel.edu', password: 'admin123', userId: 104, name: 'Demo Admin', role: 'admin', staffId: 'ADM001' },
+  { identifier: 'technician@hostel.edu', password: 'tech123', userId: 105, name: 'Demo Technician', role: 'technician', staffId: 'TECH001' },
+  { identifier: 'security@hostel.edu', password: 'security123', userId: 106, name: 'Demo Security', role: 'security', staffId: 'SEC001' }
+];
+
+const persistAuthUser = (loginData) => {
+  const userData = {
+    userId: loginData.userId,
+    name: loginData.name,
+    role: loginData.role,
+    staffId: loginData.staffId || null,
+    rollNumber: loginData.rollNumber || null
+  };
+  localStorage.setItem('hostelUser', JSON.stringify(userData));
+  localStorage.setItem('isAuthenticated', 'true');
+};
+
+const getOfflineDemoUser = (email, password) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  return OFFLINE_DEMO_USERS.find((candidate) => {
+    const candidateIdentifier = candidate.identifier.toLowerCase();
+    return candidateIdentifier === normalizedEmail && candidate.password === password;
+  });
+};
+
 const readStoredUser = () => {
   try {
     const raw = localStorage.getItem('hostelUser');
@@ -22,8 +51,9 @@ const readStoredUser = () => {
 
 api.interceptors.request.use((config) => {
   const user = readStoredUser();
-  if (user?.userId) {
-    config.headers['X-User-Id'] = String(user.userId);
+  const actorId = user?.userId || user?.id;
+  if (actorId) {
+    config.headers['X-User-Id'] = String(actorId);
   }
   if (user?.role) {
     config.headers['X-User-Role'] = String(user.role);
@@ -49,16 +79,7 @@ export const login = async (email, password, userType = 'student') => {
     const loginData = payload.data || payload;
 
     if (payload.success) {
-      // Store user data in localStorage with correct format
-      const userData = {
-        userId: loginData.userId,
-        name: loginData.name,
-        role: loginData.role,
-        staffId: loginData.staffId || null,
-        rollNumber: loginData.rollNumber || null
-      };
-      localStorage.setItem('hostelUser', JSON.stringify(userData));
-      localStorage.setItem('isAuthenticated', 'true');
+      persistAuthUser(loginData);
       return {
         success: true,
         ...loginData,
@@ -81,9 +102,19 @@ export const login = async (email, password, userType = 'student') => {
       };
     } else if (error.request) {
       // No response from server
+      const demoUser = getOfflineDemoUser(email, password);
+      if (demoUser) {
+        persistAuthUser(demoUser);
+        return {
+          success: true,
+          ...demoUser,
+          message: 'Logged in with offline demo mode (backend unavailable).'
+        };
+      }
+
       return {
         success: false,
-        message: 'Cannot connect to server. Please ensure backend is running on http://localhost:5000'
+        message: 'Cannot connect to server. Start backend on http://localhost:5000 or use demo credentials.'
       };
     } else {
       // Other errors
@@ -149,6 +180,26 @@ export const getCurrentUser = () => {
     }
   }
   return null;
+};
+
+export const getAuthHeaders = (includeContentType = false) => {
+  const user = getCurrentUser();
+  const headers = {};
+
+  if (includeContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const actorId = user?.userId || user?.id;
+  if (actorId) {
+    headers['X-User-Id'] = String(actorId);
+  }
+
+  if (user?.role) {
+    headers['X-User-Role'] = String(user.role);
+  }
+
+  return headers;
 };
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getCurrentUser } from '../../utils/auth';
+import { getAuthHeaders, getCurrentUser } from '../../utils/auth';
 import '../../styles/security-dashboard.css';
 
 const SecurityVisitors = () => {
@@ -31,9 +31,23 @@ const SecurityVisitors = () => {
     fetchStudents();
   }, []);
 
+  useEffect(() => {
+    if (showDetails) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDetails]);
+
   const fetchStudents = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/warden/students');
+      const response = await fetch('http://localhost:5000/api/security/students', {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       if (data.success) {
         setStudents(data.data);
@@ -227,6 +241,13 @@ const SecurityVisitors = () => {
   };
 
   const activeInside = activeVisitors.filter((item) => item.status === 'Inside');
+  const historyCount = visitorHistory.length;
+  const visitorsExitedToday = visitorHistory.filter((visitor) => {
+    if (!visitor.exitTime || visitor.exitTime === 'N/A') return false;
+    const exitDate = new Date(visitor.exitTime);
+    const now = new Date();
+    return exitDate.toDateString() === now.toDateString();
+  }).length;
 
   return (
     <>
@@ -236,6 +257,24 @@ const SecurityVisitors = () => {
               <p className="security-subtitle">Register and track hostel visitors</p>
             </div>
           </header>
+
+          <section className="visitor-summary-cards">
+            <div className="visitor-summary-card">
+              <span className="card-label">Inside</span>
+              <strong className="card-value">{activeInside.length}</strong>
+              <span className="card-subtitle">Visitors currently inside</span>
+            </div>
+            <div className="visitor-summary-card visitor-summary-history">
+              <span className="card-label">History</span>
+              <strong className="card-value">{historyCount}</strong>
+              <span className="card-subtitle">Recorded visitor entries</span>
+            </div>
+            <div className="visitor-summary-card visitor-summary-exit">
+              <span className="card-label">Exited Today</span>
+              <strong className="card-value">{visitorsExitedToday}</strong>
+              <span className="card-subtitle">Checkouts completed today</span>
+            </div>
+          </section>
 
           <section className="visitor-form">
             <div className="form-row">
@@ -259,7 +298,7 @@ const SecurityVisitors = () => {
                   placeholder="e.g. 98765 43210" 
                 />
               </div>
-              <div className="form-group" style={{position: 'relative'}}>
+              <div className="form-group visitor-student-search">
                 <label>Visiting Student *</label>
                 <input 
                   type="text" 
@@ -270,33 +309,15 @@ const SecurityVisitors = () => {
                   autoComplete="off"
                 />
                 {showStudentDropdown && filteredStudents.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    backgroundColor: 'white',
-                    border: '1px solid #e5e7eb',
-                    borderRadius: '8px',
-                    maxHeight: '200px',
-                    overflowY: 'auto',
-                    zIndex: 1000,
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                  }}>
+                  <div className="visitor-student-dropdown">
                     {filteredStudents.map(student => (
                       <div
                         key={student.id}
                         onClick={() => handleStudentSelect(student)}
-                        style={{
-                          padding: '8px 12px',
-                          cursor: 'pointer',
-                          borderBottom: '1px solid #f3f4f6'
-                        }}
-                        onMouseEnter={(e) => e.target.style.backgroundColor = '#f9fafb'}
-                        onMouseLeave={(e) => e.target.style.backgroundColor = 'white'}
+                        className="visitor-student-option"
                       >
-                        <div style={{fontWeight: 500}}>{student.name}</div>
-                        <div style={{fontSize: '12px', color: '#6b7280'}}>
+                        <div className="visitor-student-name">{student.name}</div>
+                        <div className="visitor-student-meta">
                           {student.roll_number} - Room {student.room_number || 'N/A'}
                         </div>
                       </div>
@@ -312,7 +333,7 @@ const SecurityVisitors = () => {
                   value={formData.roomNumber}
                   readOnly
                   placeholder="Auto-filled from student" 
-                  style={{backgroundColor: '#f9fafb'}}
+                  className="readonly-input"
                 />
               </div>
               <div className="form-group">
@@ -338,7 +359,7 @@ const SecurityVisitors = () => {
                     hour12: true 
                   })}
                   readOnly
-                  style={{backgroundColor: '#f9fafb'}}
+                  className="readonly-input"
                 />
               </div>
             </div>
@@ -373,8 +394,9 @@ const SecurityVisitors = () => {
               <span className="panel-pill">{activeInside.length} inside</span>
             </div>
             {loading ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280' }}>Loading active visitors...</div>
+              <div className="outpass-loading">Loading active visitors...</div>
             ) : activeInside.length > 0 ? (
+              <>
               <div className="visitor-table">
                 <table>
                   <thead>
@@ -422,6 +444,37 @@ const SecurityVisitors = () => {
                   </tbody>
                 </table>
               </div>
+              <div className="visitor-cards-mobile">
+                {activeInside.map((visitor) => (
+                  <article key={`active-mobile-${visitor.id}`} className="visitor-card-mobile">
+                    <div className="visitor-card-head">
+                      <div>
+                        <div className="student-name">{visitor.visitorName}</div>
+                        <div className="student-id">{visitor.phone}</div>
+                      </div>
+                      <span className="status-badge status-inside">Inside</span>
+                    </div>
+                    <div className="visitor-card-grid">
+                      <div><span>Student</span><strong>{visitor.studentName}</strong></div>
+                      <div><span>Room</span><strong>{visitor.roomNumber}</strong></div>
+                      <div><span>Entry</span><strong>{visitor.entryTime}</strong></div>
+                      <div><span>Purpose</span><strong>{visitor.purpose}</strong></div>
+                    </div>
+                    <div className="action-buttons">
+                      <button className="btn-action" onClick={() => handleViewDetails(visitor)}>View Details</button>
+                      <button
+                        className="btn-action primary"
+                        onClick={() => handleMarkExit(visitor.id)}
+                        disabled={checkingOutId === visitor.id}
+                      >
+                        {checkingOutId === visitor.id && <span className="btn-spinner" />}
+                        {checkingOutId === visitor.id ? 'Checking out...' : 'Mark Exit'}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              </>
             ) : loading ? null : (
               <div className="empty-state">
                 <span className="empty-icon">🚶</span>
@@ -434,7 +487,7 @@ const SecurityVisitors = () => {
             <div className="panel-header">
               <h3>Visitor History</h3>
             </div>
-            <div className="visitor-table">
+            <div className="visitor-table visitor-history-table">
               <table>
                 <thead>
                   <tr>
@@ -458,46 +511,70 @@ const SecurityVisitors = () => {
                 </tbody>
               </table>
             </div>
+            <div className="visitor-history-cards-mobile">
+              {visitorHistory.map((visitor) => (
+                <article key={`history-mobile-${visitor.id}`} className="visitor-card-mobile visitor-history-card-mobile">
+                  <div className="visitor-card-head">
+                    <div>
+                      <div className="student-name">{visitor.visitorName}</div>
+                      <div className="student-id">{visitor.studentName}</div>
+                    </div>
+                    <span className="status-badge status-exited">Exited</span>
+                  </div>
+                  <div className="visitor-card-grid">
+                    <div><span>Entry</span><strong>{visitor.entryTime}</strong></div>
+                    <div><span>Exit</span><strong>{visitor.exitTime}</strong></div>
+                    <div><span>Duration</span><strong>{visitor.duration}</strong></div>
+                  </div>
+                </article>
+              ))}
+            </div>
           </section>
 
       {showDetails && selectedVisitor && (
-        <div className="modal-overlay" onClick={closeDetails}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+        <div className="modal-overlay visitor-modal-overlay" onClick={closeDetails}>
+          <div className="modal-content visitor-details-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header visitor-details-header">
               <h2>Visitor Details</h2>
               <button className="modal-close" onClick={closeDetails}>×</button>
             </div>
-            <div className="modal-body">
-              <div className="details-grid">
-                <div>
+            <div className="modal-body visitor-details-body">
+              <div className="visitor-details-grid">
+                <div className="visitor-detail-card">
                   <div className="detail-label">Visitor</div>
                   <div className="detail-value">{selectedVisitor.visitorName}</div>
                   <div className="detail-sub">{selectedVisitor.phone}</div>
                 </div>
-                <div>
+                <div className="visitor-detail-card">
                   <div className="detail-label">ID</div>
                   <div className="detail-value">{selectedVisitor.idType}</div>
                   <div className="detail-sub">{selectedVisitor.idNumber}</div>
                 </div>
-                <div>
+                <div className="visitor-detail-card">
                   <div className="detail-label">Student</div>
                   <div className="detail-value">{selectedVisitor.studentName}</div>
                   <div className="detail-sub">{selectedVisitor.studentRoll}</div>
                 </div>
-                <div>
+                <div className="visitor-detail-card">
                   <div className="detail-label">Room</div>
                   <div className="detail-value">{selectedVisitor.roomNumber}</div>
                   <div className="detail-sub">{selectedVisitor.purpose}</div>
                 </div>
               </div>
 
-              <div className="timeline">
-                <div className="timeline-item active">Entry - {selectedVisitor.entryTime}</div>
-                <div className="timeline-item">Exit - Pending</div>
+              <div className="visitor-mini-timeline">
+                <div className="visitor-mini-step visitor-mini-step-active">
+                  <span>Entry</span>
+                  <strong>{selectedVisitor.entryTime}</strong>
+                </div>
+                <div className="visitor-mini-step">
+                  <span>Exit</span>
+                  <strong>Pending</strong>
+                </div>
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={closeDetails}>Close</button>
+            <div className="modal-footer visitor-details-footer">
+              <button className="btn-secondary visitor-details-close" onClick={closeDetails}>Close</button>
             </div>
           </div>
         </div>

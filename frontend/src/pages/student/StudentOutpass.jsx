@@ -24,7 +24,14 @@ const StudentOutpass = () => {
   const [otpInput, setOtpInput] = useState('');
   const [currentOutpassForOtp, setCurrentOutpassForOtp] = useState(null);
   const [otpSent, setOtpSent] = useState({});
+  const [otpSendingById, setOtpSendingById] = useState({});
   const [holidayDateError, setHolidayDateError] = useState('');
+  const [messageModal, setMessageModal] = useState({
+    open: false,
+    title: '',
+    message: '',
+    success: true,
+  });
 
   const departureQuickTimes = ['08:00', '09:00', '10:00', '14:00', '17:00'];
   const returnQuickTimes = ['12:00', '16:00', '18:00', '20:00', '21:00'];
@@ -35,6 +42,19 @@ const StudentOutpass = () => {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  const getCurrentTimeString = () => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  const getDateTimeFromParts = (dateStr, timeStr) => {
+    if (!dateStr || !timeStr) return null;
+    const parsed = new Date(`${dateStr}T${timeStr}`);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
   
   // Check holiday mode from backend
@@ -88,10 +108,19 @@ const StudentOutpass = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        [name]: value,
+      };
+
+      // Keep date ranges valid while user edits.
+      if (name === 'departureDate' && next.returnDate && next.returnDate < value) {
+        next.returnDate = value;
+      }
+
+      return next;
+    });
 
     if (holidayDateError && name === 'departureDate') {
       setHolidayDateError('');
@@ -105,17 +134,55 @@ const StudentOutpass = () => {
     }));
   };
 
+  const showMessageModal = (title, message, success = true) => {
+    setMessageModal({
+      open: true,
+      title,
+      message,
+      success,
+    });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const today = getTodayDateString();
+    const now = new Date();
+    const departureDateTime = getDateTimeFromParts(formData.departureDate, formData.departureTime);
+    const returnDateTime = getDateTimeFromParts(formData.returnDate, formData.returnTime);
+
+    if (!formData.reason || !formData.destination || !formData.departureDate || !formData.departureTime || !formData.returnDate || !formData.returnTime) {
+      showMessageModal('Missing Details', 'Please fill in all required fields.', false);
+      return;
+    }
+
+    if (formData.departureDate < today || formData.returnDate < today) {
+      showMessageModal('Invalid Dates', 'Outpass dates cannot be in the past.', false);
+      return;
+    }
+
+    if (!departureDateTime || !returnDateTime) {
+      showMessageModal('Invalid Date/Time', 'Please select valid departure and return date/time.', false);
+      return;
+    }
+
+    if (departureDateTime < now) {
+      showMessageModal('Invalid Departure', 'Departure date and time must be from now onwards.', false);
+      return;
+    }
+
+    if (returnDateTime <= departureDateTime) {
+      showMessageModal('Invalid Return Time', 'Expected return must be after departure date and time.', false);
+      return;
+    }
     
     // Validation for holiday mode
     if (holidayMode && !approvalMethod) {
-      alert('Please select an approval method');
+      showMessageModal('Approval Method Required', 'Please select an approval method.', false);
       return;
     }
 
     if (holidayMode) {
-      const today = getTodayDateString();
       if (formData.departureDate !== today) {
         setHolidayDateError('In holiday mode, exit date must be today.');
         return;
@@ -159,19 +226,20 @@ const StudentOutpass = () => {
         setApprovalMethod('');
         setHolidayDateError('');
         setShowForm(false);
-        alert('Outpass request submitted successfully!');
+        showMessageModal('Request Submitted', 'Outpass request submitted successfully!');
       } else {
-        alert(data.message || 'Failed to submit outpass request');
+        showMessageModal('Submission Failed', data.message || 'Failed to submit outpass request.', false);
       }
     } catch (error) {
       console.error('Error submitting outpass:', error);
-      alert('Error submitting outpass request');
+      showMessageModal('Submission Error', 'Error submitting outpass request.', false);
     } finally {
       setSubmitting(false);
     }
   };
   
   const handleSendOtp = async (outpassId) => {
+    setOtpSendingById(prev => ({ ...prev, [outpassId]: true }));
     try {
       const res = await fetch(`http://localhost:5000/api/student/outpass/${outpassId}/send-otp`, {
         method: 'POST',
@@ -183,26 +251,35 @@ const StudentOutpass = () => {
       
       if (res.status === 429) {
         // Rate limited - OTP already sent recently
-        alert(`⏳ ${message || 'OTP already sent recently.'}\nOTP has already been sent to parent email.`);
+        showMessageModal(
+          'OTP Already Sent',
+          `${message || 'OTP already sent recently.'}\nOTP has already been sent to parent email.`,
+          false
+        );
         setOtpSent(prev => ({ ...prev, [outpassId]: true }));
         return;
       }
       
       if (data.success) {
         setOtpSent(prev => ({ ...prev, [outpassId]: true }));
-        alert(`✅ OTP sent successfully to parent email: ${payload.parent_email || payload.parent_contact || 'N/A'}\n\nPlease verify the OTP to complete your outpass request.`);
+        showMessageModal(
+          'OTP Sent',
+          `OTP sent successfully to parent email: ${payload.parent_email || payload.parent_contact || 'N/A'}\n\nPlease verify the OTP to complete your outpass request.`
+        );
       } else {
-        alert(message || 'Failed to send OTP');
+        showMessageModal('OTP Send Failed', message || 'Failed to send OTP.', false);
       }
     } catch (error) {
       console.error('Error sending OTP:', error);
-      alert('Error sending OTP. Please try again.');
+      showMessageModal('OTP Send Error', 'Error sending OTP. Please try again.', false);
+    } finally {
+      setOtpSendingById(prev => ({ ...prev, [outpassId]: false }));
     }
   };
   
   const handleVerifyOtp = async () => {
     if (otpInput.length !== 6) {
-      alert('Please enter a valid 6-digit OTP');
+      showMessageModal('Invalid OTP', 'Please enter a valid 6-digit OTP.', false);
       return;
     }
     
@@ -226,13 +303,13 @@ const StudentOutpass = () => {
         setShowOtpModal(false);
         setOtpInput('');
         setCurrentOutpassForOtp(null);
-        alert('✅ OTP Verified! Outpass approved via parent verification.');
+        showMessageModal('OTP Verified', 'Outpass approved via parent verification.');
       } else {
-        alert(message || 'Invalid OTP');
+        showMessageModal('OTP Verification Failed', message || 'Invalid OTP.', false);
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      alert('Error verifying OTP');
+      showMessageModal('OTP Verification Error', 'Error verifying OTP.', false);
     }
   };
 
@@ -328,7 +405,7 @@ const StudentOutpass = () => {
                       className="form-input"
                       value={formData.departureDate}
                       onChange={handleInputChange}
-                      min={holidayMode ? getTodayDateString() : undefined}
+                      min={getTodayDateString()}
                       max={holidayMode ? getTodayDateString() : undefined}
                     />
                     {holidayDateError && (
@@ -349,6 +426,7 @@ const StudentOutpass = () => {
                       className="form-input"
                       value={formData.departureTime}
                       onChange={handleInputChange}
+                      min={formData.departureDate === getTodayDateString() ? getCurrentTimeString() : undefined}
                     />
                     <div className="quick-time-row">
                       {departureQuickTimes.map((quickTime) => (
@@ -379,6 +457,7 @@ const StudentOutpass = () => {
                       className="form-input"
                       value={formData.returnDate}
                       onChange={handleInputChange}
+                      min={formData.departureDate || getTodayDateString()}
                     />
                   </div>
 
@@ -393,6 +472,11 @@ const StudentOutpass = () => {
                       className="form-input"
                       value={formData.returnTime}
                       onChange={handleInputChange}
+                      min={
+                        formData.returnDate === formData.departureDate
+                          ? formData.departureTime || undefined
+                          : undefined
+                      }
                     />
                     <div className="quick-time-row">
                       {returnQuickTimes.map((quickTime) => (
@@ -448,6 +532,13 @@ const StudentOutpass = () => {
 
                 {/* Submit Button */}
                 <div className="form-actions">
+                  <button
+                    type="button"
+                    className="cancel-btn"
+                    onClick={() => setShowForm(false)}
+                  >
+                    Cancel
+                  </button>
                   <button 
                     type="submit" 
                     className="submit-btn"
@@ -513,26 +604,34 @@ const StudentOutpass = () => {
                           
                           {/* OTP Actions */}
                           {outpass.status === 'pending_otp' && (
-                            <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <div className="otp-action-row">
                               {!otpSent[outpass.id] ? (
                                 <button
-                                  className="submit-btn"
-                                  style={{ padding: '0.5rem 1rem', fontSize: '14px' }}
+                                  className="submit-btn otp-action-btn"
+                                  disabled={!!otpSendingById[outpass.id]}
                                   onClick={() => handleSendOtp(outpass.id)}
                                 >
-                                  📱 Send OTP to Parent
+                                  {otpSendingById[outpass.id] ? 'Sending OTP...' : '📱 Send OTP to Parent'}
                                 </button>
                               ) : (
-                                <button
-                                  className="submit-btn"
-                                  style={{ padding: '0.5rem 1rem', fontSize: '14px', background: '#10b981' }}
-                                  onClick={() => {
-                                    setCurrentOutpassForOtp(outpass);
-                                    setShowOtpModal(true);
-                                  }}
-                                >
-                                  🔐 Enter OTP
-                                </button>
+                                <>
+                                  <button
+                                    className="submit-btn otp-action-btn otp-enter-btn"
+                                    onClick={() => {
+                                      setCurrentOutpassForOtp(outpass);
+                                      setShowOtpModal(true);
+                                    }}
+                                  >
+                                    🔐 Enter OTP
+                                  </button>
+                                  <button
+                                    className="cancel-btn otp-action-btn otp-resend-btn"
+                                    disabled={!!otpSendingById[outpass.id]}
+                                    onClick={() => handleSendOtp(outpass.id)}
+                                  >
+                                    {otpSendingById[outpass.id] ? 'Resending...' : '↻ Resend OTP'}
+                                  </button>
+                                </>
                               )}
                             </div>
                           )}
@@ -547,6 +646,41 @@ const StudentOutpass = () => {
               )}
             </section>
           
+          {/* OTP Verification Modal */}
+          {messageModal.open && (
+            <div className="outpass-modal-overlay" onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}>
+              <section className="outpass-form-section outpass-modal-card outpass-feedback-modal" onClick={(e) => e.stopPropagation()}>
+                <div className="form-header">
+                  <div>
+                    <h2 className="form-title">{messageModal.title}</h2>
+                    <p className="form-subtitle">{messageModal.success ? 'Completed successfully' : 'Please review and try again'}</p>
+                  </div>
+                  <button
+                    className="form-close-btn"
+                    onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="outpass-feedback-body">
+                  <p className={`outpass-feedback-text ${messageModal.success ? 'is-success' : 'is-error'}`}>
+                    {messageModal.message}
+                  </p>
+                </div>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="submit-btn"
+                    onClick={() => setMessageModal({ open: false, title: '', message: '', success: true })}
+                  >
+                    OK
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
           {/* OTP Verification Modal */}
           {showOtpModal && currentOutpassForOtp && (
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>

@@ -743,9 +743,23 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 -- ========================================
 
 -- Add foreign key constraint for room_id in students table
-ALTER TABLE students 
-  ADD CONSTRAINT fk_student_room 
-  FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL;
+SET @fk_student_room_exists := (
+  SELECT COUNT(*)
+  FROM information_schema.TABLE_CONSTRAINTS
+  WHERE CONSTRAINT_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'students'
+    AND CONSTRAINT_NAME = 'fk_student_room'
+);
+
+SET @fk_student_room_sql := IF(
+  @fk_student_room_exists = 0,
+  'ALTER TABLE students ADD CONSTRAINT fk_student_room FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL',
+  'SELECT "fk_student_room already exists"'
+);
+
+PREPARE fk_stmt FROM @fk_student_room_sql;
+EXECUTE fk_stmt;
+DEALLOCATE PREPARE fk_stmt;
 
 -- ========================================
 -- VIEWS (For Quick Access)
@@ -795,7 +809,7 @@ SELECT
   c.title,
   c.priority,
   c.status,
-  s.roll_number,
+  st.roll_number,
   u.name AS student_name,
   t.name AS technician_name,
   c.created_at

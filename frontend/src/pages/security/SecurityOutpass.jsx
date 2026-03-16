@@ -13,6 +13,7 @@ const SecurityOutpass = () => {
   const [actionLoading, setActionLoading] = useState({});
   const [actionConfirm, setActionConfirm] = useState({ open: false, type: null, id: null });
   const [actionResult, setActionResult] = useState({ open: false, title: '', message: '', success: true });
+  const [refreshing, setRefreshing] = useState(false);
   const currentUser = getCurrentUser();
 
   const [outpasses, setOutpasses] = useState([]);
@@ -20,6 +21,20 @@ const SecurityOutpass = () => {
   useEffect(() => {
     fetchOutpasses();
   }, []);
+
+  useEffect(() => {
+    const hasOpenModal = showDetails || actionConfirm.open || actionResult.open;
+
+    if (hasOpenModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDetails, actionConfirm.open, actionResult.open]);
 
   const formatLateDuration = (lateMinutes) => {
     const totalMinutes = Number(lateMinutes || 0);
@@ -36,8 +51,13 @@ const SecurityOutpass = () => {
     return `${hours}:${String(minutes).padStart(2, '0')} hours`;
   };
 
-  const fetchOutpasses = async () => {
-    setLoading(true);
+  const fetchOutpasses = async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
       const response = await fetch('http://localhost:5000/api/security/outpasses/approved');
       const data = await response.json();
@@ -46,8 +66,14 @@ const SecurityOutpass = () => {
       }
     } catch (error) {
       console.error('Error fetching outpasses:', error);
-      alert('Failed to fetch outpasses');
+      setActionResult({
+        open: true,
+        success: false,
+        title: 'Load Failed',
+        message: 'Failed to fetch outpasses.'
+      });
     } finally {
+      setRefreshing(false);
       setLoading(false);
     }
   };
@@ -271,6 +297,11 @@ const SecurityOutpass = () => {
     return matchesSearch && matchesStatus && matchesDate;
   });
 
+  const approvedCount = outpasses.filter((item) => ['approved', 'approved_otp'].includes(item.status?.toLowerCase())).length;
+  const exitedCount = outpasses.filter((item) => item.status?.toLowerCase() === 'exited').length;
+  const overdueCount = outpasses.filter((item) => item.status?.toLowerCase() === 'overdue').length;
+  const returnedCount = outpasses.filter((item) => item.status?.toLowerCase() === 'returned').length;
+
   return (
     <>
       <header className="outpass-header">
@@ -278,7 +309,37 @@ const SecurityOutpass = () => {
               <h1 className="security-title-main">Outpass Management</h1>
               <p className="security-subtitle">Track student exits and returns</p>
             </div>
+            <button
+              className="outpass-refresh-btn"
+              onClick={() => fetchOutpasses(true)}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
           </header>
+
+          <section className="outpass-summary-cards">
+            <div className="outpass-summary-card">
+              <span className="card-label">Approved</span>
+              <strong className="card-value">{approvedCount}</strong>
+              <span className="card-subtitle">Awaiting exit scan</span>
+            </div>
+            <div className="outpass-summary-card">
+              <span className="card-label">Currently Out</span>
+              <strong className="card-value">{exitedCount}</strong>
+              <span className="card-subtitle">Not yet returned</span>
+            </div>
+            <div className="outpass-summary-card outpass-summary-card-alert">
+              <span className="card-label">Overdue</span>
+              <strong className="card-value">{overdueCount}</strong>
+              <span className="card-subtitle">Need immediate follow-up</span>
+            </div>
+            <div className="outpass-summary-card">
+              <span className="card-label">Returned</span>
+              <strong className="card-value">{returnedCount}</strong>
+              <span className="card-subtitle">Completed outpass cycle</span>
+            </div>
+          </section>
 
           <section className="outpass-filters">
             <div className="filter-group wide">
@@ -316,9 +377,21 @@ const SecurityOutpass = () => {
                 <option>This Week</option>
               </select>
             </div>
+            <div className="filter-group wide">
+              <label className="filter-label">Action Notes (optional)</label>
+              <input
+                className="filter-input"
+                placeholder="Example: ID checked at main gate"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
           </section>
 
-          {filteredOutpasses.length > 0 ? (
+          {loading ? (
+            <div className="outpass-loading">Loading outpasses...</div>
+          ) : filteredOutpasses.length > 0 ? (
+            <>
             <section className="outpass-table">
               <table>
                 <thead>
@@ -397,6 +470,63 @@ const SecurityOutpass = () => {
                 </tbody>
               </table>
             </section>
+
+            <section className="outpass-mobile-cards">
+              {filteredOutpasses.map((item) => (
+                <article
+                  key={`mobile-${item.id}`}
+                  className={`outpass-mobile-card ${item.status === 'overdue' ? 'overdue-row' : ''}`}
+                >
+                  <div className="outpass-mobile-head">
+                    <div>
+                      <div className="student-name">{item.student_name}</div>
+                      <div className="student-id">{item.roll_number}</div>
+                    </div>
+                    <span className={`status-badge ${getStatusClass(item)}`}>{getStatusDisplay(item)}</span>
+                  </div>
+
+                  <div className="outpass-mobile-grid">
+                    <div><span>Room</span><strong>{item.room_number ? `${item.room_number} ${item.block_name}` : '—'}</strong></div>
+                    <div><span>Destination</span><strong>{item.destination}</strong></div>
+                    <div><span>Expected Return</span><strong>{formatDateTime(item.expected_return_time)}</strong></div>
+                    <div><span>Reason</span><strong>{item.reason}</strong></div>
+                  </div>
+
+                  {item.status === 'overdue' && (
+                    <div className="overdue-note">Late by {formatLateDuration(item.late_minutes || 0)}</div>
+                  )}
+
+                  {item.status === 'returned' && item.is_late && item.grace_period_applied && (
+                    <div className="grace-period-note">✅ Grace period applied ({formatLateDuration(item.late_minutes)} late)</div>
+                  )}
+
+                  <div className="action-buttons">
+                    <button className="btn-action" onClick={() => handleViewDetails(item)}>View Details</button>
+                    {(item.status === 'approved' || item.status === 'approved_otp') && (
+                      <button
+                        className="btn-action primary"
+                        onClick={() => requestConfirm('out', item.id)}
+                        disabled={actionLoading[item.id]}
+                      >
+                        {actionLoading[item.id] && <span className="btn-spinner" />}
+                        {actionLoading[item.id] ? 'Marking...' : 'Mark OUT'}
+                      </button>
+                    )}
+                    {(item.status === 'exited' || item.status === 'overdue') && (
+                      <button
+                        className="btn-action primary"
+                        onClick={() => requestConfirm('in', item.id)}
+                        disabled={actionLoading[item.id]}
+                      >
+                        {actionLoading[item.id] && <span className="btn-spinner" />}
+                        {actionLoading[item.id] ? 'Marking...' : 'Mark IN'}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </section>
+            </>
           ) : (
             <div className="empty-state">
               <span className="empty-icon">🚪</span>
@@ -409,32 +539,32 @@ const SecurityOutpass = () => {
           )}
 
       {showDetails && selectedOutpass && (
-        <div className="modal-overlay" onClick={closeDetails}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
+            <div className="modal-overlay outpass-modal-overlay" onClick={closeDetails}>
+          <div className="modal-content outpass-details-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header outpass-details-header">
               <h2>Outpass Details</h2>
               <button className="modal-close" onClick={closeDetails}>×</button>
             </div>
-            <div className="modal-body">
-              <div className="details-grid">
-                <div>
+            <div className="modal-body outpass-details-body">
+              <div className="outpass-details-grid">
+                <div className="outpass-detail-card">
                   <div className="detail-label">Student</div>
                   <div className="detail-value">{selectedOutpass.student_name}</div>
                   <div className="detail-sub">{selectedOutpass.roll_number}</div>
                 </div>
-                <div>
+                <div className="outpass-detail-card">
                   <div className="detail-label">Room</div>
                   <div className="detail-value">
                     {selectedOutpass.room_number ? `${selectedOutpass.room_number} ${selectedOutpass.block_name}` : 'Not assigned'}
                   </div>
                   <div className="detail-sub">Phone: {selectedOutpass.phone || '—'}</div>
                 </div>
-                <div>
+                <div className="outpass-detail-card">
                   <div className="detail-label">Destination</div>
                   <div className="detail-value">{selectedOutpass.destination}</div>
                   <div className="detail-sub">{selectedOutpass.reason}</div>
                 </div>
-                <div>
+                <div className="outpass-detail-card">
                   <div className="detail-label">Status</div>
                   <div className="detail-value">
                     <span className={`status-badge ${getStatusClass(selectedOutpass)}`}>
@@ -455,32 +585,26 @@ const SecurityOutpass = () => {
               </div>
 
               <div
-                className="timeline timeline-track"
+                className="timeline outpass-timeline"
                 style={{ '--track-width': `${getTimelineProgress(selectedOutpass)}%` }}
               >
-                <div className="timeline-item active">
-                  <div>Requested</div>
-                  <div className="timeline-time">
-                    {formatDateTime(selectedOutpass.created_at || selectedOutpass.request_time)}
-                  </div>
-                </div>
-                <div className="timeline-item">
+                <div className="timeline-item outpass-timeline-item">
                   <div>Expected Departure</div>
                   <div className="timeline-time">
                     {formatDateTimeParts(selectedOutpass.out_date, selectedOutpass.out_time)}
                   </div>
                 </div>
-                <div className={`timeline-item ${selectedOutpass.actual_exit_time ? 'active' : 'pending'}`}>
+                <div className={`timeline-item outpass-timeline-item ${selectedOutpass.actual_exit_time ? 'active' : 'pending'}`}>
                   <div>Actual Exit</div>
                   <div className="timeline-time">
                     {selectedOutpass.actual_exit_time ? formatDateTime(selectedOutpass.actual_exit_time) : 'Not yet'}
                   </div>
                 </div>
-                <div className="timeline-item">
+                <div className="timeline-item outpass-timeline-item">
                   <div>Expected Return</div>
                   <div className="timeline-time">{formatDateTime(selectedOutpass.expected_return_time)}</div>
                 </div>
-                <div className={`timeline-item ${selectedOutpass.actual_return_time ? 'active' : 'pending'}`}>
+                <div className={`timeline-item outpass-timeline-item ${selectedOutpass.actual_return_time ? 'active' : 'pending'}`}>
                   <div>Actual Return</div>
                   <div className="timeline-time">
                     {selectedOutpass.actual_return_time ? formatDateTime(selectedOutpass.actual_return_time) : 'Not yet'}
@@ -495,15 +619,15 @@ const SecurityOutpass = () => {
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={closeDetails}>Close</button>
+            <div className="modal-footer outpass-details-footer">
+              <button className="btn-secondary outpass-details-close" onClick={closeDetails}>Close</button>
             </div>
           </div>
         </div>
       )}
 
       {actionConfirm.open && (
-        <div className="modal-overlay" onClick={() => setActionConfirm({ open: false, type: null, id: null })}>
+        <div className="modal-overlay outpass-modal-overlay" onClick={() => setActionConfirm({ open: false, type: null, id: null })}>
           <div className="modal-content" style={{ maxWidth: '420px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>Confirm Action</h2>
@@ -525,7 +649,7 @@ const SecurityOutpass = () => {
       )}
 
       {actionResult.open && (
-        <div className="modal-overlay" onClick={() => setActionResult({ open: false, title: '', message: '', success: true })}>
+        <div className="modal-overlay outpass-modal-overlay" onClick={() => setActionResult({ open: false, title: '', message: '', success: true })}>
           <div className="modal-content" style={{ maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{actionResult.title}</h2>

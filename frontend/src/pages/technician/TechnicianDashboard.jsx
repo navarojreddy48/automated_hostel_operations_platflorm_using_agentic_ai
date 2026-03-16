@@ -70,6 +70,18 @@ const TechnicianDashboard = () => {
     fetchComplaints();
   }, [technicianUserId]);
 
+  useEffect(() => {
+    if (showDetailModal) {
+      document.body.classList.add('modal-open');
+    } else {
+      document.body.classList.remove('modal-open');
+    }
+
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, [showDetailModal]);
+
   // Get priority level for complaint (based on age and type)
   const getPriority = (complaint) => {
     if (complaint.priority) return complaint.priority;
@@ -275,39 +287,37 @@ const TechnicianDashboard = () => {
           )}
         </div>
 
-        <div className="filter-group">
-          <select 
-            value={filterStatus} 
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Status</option>
-            <option value="pending">Pending (Assigned to me)</option>
-            <option value="delayed">Delayed</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-          </select>
+        <select 
+          value={filterStatus} 
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="filter-select"
+        >
+          <option value="all">All Status</option>
+          <option value="pending">Pending (Assigned to me)</option>
+          <option value="delayed">Delayed</option>
+          <option value="in_progress">In Progress</option>
+          <option value="resolved">Resolved</option>
+        </select>
 
-          <select 
-            value={filterPriority} 
-            onChange={(e) => setFilterPriority(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Priority</option>
-            <option value="high">High Priority</option>
-            <option value="medium">Medium Priority</option>
-            <option value="low">Low Priority</option>
-          </select>
+        <select 
+          value={filterPriority} 
+          onChange={(e) => setFilterPriority(e.target.value)}
+          className="filter-select"
+        >
+          <option value="all">All Priority</option>
+          <option value="high">High Priority</option>
+          <option value="medium">Medium Priority</option>
+          <option value="low">Low Priority</option>
+        </select>
 
-          <select 
-            value={sortBy} 
-            onChange={(e) => setSortBy(e.target.value)}
-            className="filter-select"
-          >
-            <option value="date">Sort by Date</option>
-            <option value="priority">Sort by Priority</option>
-          </select>
-        </div>
+        <select 
+          value={sortBy} 
+          onChange={(e) => setSortBy(e.target.value)}
+          className="filter-select"
+        >
+          <option value="date">Sort by Date</option>
+          <option value="priority">Sort by Priority</option>
+        </select>
       </section>
 
       {/* KANBAN BOARD */}
@@ -464,85 +474,82 @@ const TechnicianDashboard = () => {
       {/* LIST VIEW */}
       {viewMode === 'list' && (
         <section className="task-list">
-          <div className="list-container">
-            <table className="tasks-table">
-              <thead>
-                <tr>
-                  <th>Priority</th>
-                  <th>Issue Type</th>
-                  <th>Student</th>
-                  <th>Location</th>
-                  <th>Status</th>
-                  <th>Time</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan="7" className="loading-cell">
-                      <div className="spinner"></div>
-                      <span>Loading tasks...</span>
-                    </td>
-                  </tr>
-                ) : getFilteredComplaints().length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="empty-cell">
-                      <span className="empty-icon">📋</span>
-                      <p>No tasks assigned to you</p>
-                    </td>
-                  </tr>
-                ) : (
-                  getFilteredComplaints().map(complaint => (
-                    <tr key={complaint.id} className="table-row">
-                      <td>
-                        <span className={`priority-badge priority-${getPriority(complaint)}`}>
-                          {getPriority(complaint)}
-                        </span>
-                      </td>
-                      <td className="issue-cell">
-                        <strong>{complaint.issue_type}</strong>
-                      </td>
-                      <td>{complaint.student_name || 'N/A'}</td>
-                      <td>Room {complaint.room_number || complaint.location || 'N/A'}</td>
-                      <td>
-                        <span className={`status-badge status-${complaint.status === 'assigned' || complaint.status === 'delayed' ? 'pending' : complaint.status}`}>
-                          {complaint.status === 'assigned' ? 'Pending' : complaint.status === 'delayed' ? 'Delayed' : complaint.status === 'in_progress' ? 'In Progress' : complaint.status}
-                        </span>
-                      </td>
-                      <td className="time-cell">{formatDate(complaint.complaint_date || complaint.created_at)}</td>
-                      <td className="actions-cell">
-                        {(complaint.status === 'pending' || complaint.status === 'assigned' || complaint.status === 'delayed') && (
-                          <button
-                            onClick={() => updateComplaintStatus(complaint.id, 'in_progress')}
-                            disabled={updatingId === complaint.id}
-                            className="action-btn btn-start"
-                          >
-                            Start
-                          </button>
-                        )}
-                        {complaint.status === 'in_progress' && (
-                          <button
-                            onClick={() => updateComplaintStatus(complaint.id, 'resolved')}
-                            disabled={updatingId === complaint.id}
-                            className="action-btn btn-resolve"
-                          >
-                            Resolve
-                          </button>
-                        )}
-                        <button
-                          onClick={() => viewDetails(complaint)}
-                          className="action-btn btn-view"
-                        >
-                          View
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          {loading ? (
+            <div className="loading-cell list-state-card">
+              <div className="spinner"></div>
+              <span>Loading tasks...</span>
+            </div>
+          ) : getFilteredComplaints().length === 0 ? (
+            <div className="empty-cell list-state-card">
+              <span className="empty-icon">📋</span>
+              <p>No tasks assigned to you</p>
+            </div>
+          ) : (
+            <div className="task-list-cards">
+              {getFilteredComplaints().map((complaint) => (
+                <article key={complaint.id} className="task-list-card">
+                  <div className="task-list-card-top">
+                    <h4 className="task-list-issue">{complaint.issue_type}</h4>
+                    <span className={`priority-badge priority-${getPriority(complaint)}`}>
+                      {getPriority(complaint)}
+                    </span>
+                  </div>
+
+                  <div className="task-list-meta-grid">
+                    <div className="task-meta-item">
+                      <span className="meta-label">Student</span>
+                      <span className="meta-value">{complaint.student_name || 'N/A'}</span>
+                    </div>
+                    <div className="task-meta-item">
+                      <span className="meta-label">Location</span>
+                      <span className="meta-value">Room {complaint.room_number || complaint.location || 'N/A'}</span>
+                    </div>
+                    <div className="task-meta-item">
+                      <span className="meta-label">Status</span>
+                      <span className={`status-badge status-${complaint.status === 'assigned' || complaint.status === 'delayed' ? 'pending' : complaint.status}`}>
+                        {complaint.status === 'assigned' ? 'Pending' : complaint.status === 'delayed' ? 'Delayed' : complaint.status === 'in_progress' ? 'In Progress' : complaint.status}
+                      </span>
+                    </div>
+                    <div className="task-meta-item">
+                      <span className="meta-label">Updated</span>
+                      <span className="meta-value">{formatDate(complaint.complaint_date || complaint.created_at)}</span>
+                    </div>
+                  </div>
+
+                  {complaint.description && (
+                    <p className="task-list-description">{complaint.description}</p>
+                  )}
+
+                  <div className="task-list-actions">
+                    {(complaint.status === 'pending' || complaint.status === 'assigned' || complaint.status === 'delayed') && (
+                      <button
+                        onClick={() => updateComplaintStatus(complaint.id, 'in_progress')}
+                        disabled={updatingId === complaint.id}
+                        className="action-btn btn-start"
+                      >
+                        {updatingId === complaint.id ? 'Starting...' : 'Start'}
+                      </button>
+                    )}
+                    {complaint.status === 'in_progress' && (
+                      <button
+                        onClick={() => updateComplaintStatus(complaint.id, 'resolved')}
+                        disabled={updatingId === complaint.id}
+                        className="action-btn btn-resolve"
+                      >
+                        {updatingId === complaint.id ? 'Resolving...' : 'Resolve'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => viewDetails(complaint)}
+                      className="action-btn btn-view"
+                    >
+                      View
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       )}
 

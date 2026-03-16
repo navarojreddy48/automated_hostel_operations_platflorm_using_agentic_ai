@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getAuthHeaders } from '../../utils/auth';
 import '../../styles/warden-complaints.css';
 
 const parseDate = (value) => new Date(`${value}T00:00:00`);
@@ -15,6 +16,10 @@ const WardenLeave = () => {
   const [processingId, setProcessingId] = useState(null);
   const [historyModal, setHistoryModal] = useState({ open: false, roll: '', name: '' });
   const [historyState, setHistoryState] = useState({ loading: false, items: [] });
+  const [feedbackModal, setFeedbackModal] = useState({ open: false, message: '', success: true });
+
+  const showFeedbackModal = (message, success) => setFeedbackModal({ open: true, message, success });
+  const closeFeedbackModal = () => setFeedbackModal({ open: false, message: '', success: true });
   const [agenticData, setAgenticData] = useState({
     status_summary: {},
     alerts: [],
@@ -37,7 +42,9 @@ const WardenLeave = () => {
 
   const fetchLeaveRequests = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/pending`);
+      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/pending`, {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       if (data.success) {
         setRequests(data.data);
@@ -51,7 +58,9 @@ const WardenLeave = () => {
 
   const fetchAgenticLeaveMonitor = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/agentic-monitor`);
+      const response = await fetch(`${API_BASE_URL}/api/warden/leaves/agentic-monitor`, {
+        headers: getAuthHeaders()
+      });
       if (!response.ok) return;
 
       const data = await response.json();
@@ -81,7 +90,9 @@ const WardenLeave = () => {
 
   const fetchLeaveHistory = async (roll) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/warden/leave-history/${encodeURIComponent(roll)}`);
+      const response = await fetch(`http://localhost:5000/api/warden/leave-history/${encodeURIComponent(roll)}`, {
+        headers: getAuthHeaders()
+      });
       const data = await response.json();
       if (data.success) {
         setHistoryState({ loading: false, items: data.data || [] });
@@ -151,7 +162,8 @@ const WardenLeave = () => {
     // Get user from localStorage (using correct key 'hostelUser')
     const userStr = localStorage.getItem('hostelUser');
     if (!userStr) {
-      alert('User not authenticated. Please log in again.');
+      showFeedbackModal('User not authenticated. Please log in again.', false);
+      setProcessingId(null);
       return;
     }
 
@@ -159,12 +171,14 @@ const WardenLeave = () => {
     try {
       user = JSON.parse(userStr);
     } catch (e) {
-      alert('Error parsing user data. Please log in again.');
+      showFeedbackModal('Error parsing user data. Please log in again.', false);
+      setProcessingId(null);
       return;
     }
 
     if (!user || (!user.userId && !user.id)) {
-      alert('User ID not found. Please log in again.');
+      showFeedbackModal('User ID not found. Please log in again.', false);
+      setProcessingId(null);
       return;
     }
 
@@ -176,7 +190,7 @@ const WardenLeave = () => {
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(true),
         body: JSON.stringify({ 
           approved_by: userId,
           remark: draft.mode === 'approve' ? draft.text.trim() : undefined,
@@ -191,16 +205,16 @@ const WardenLeave = () => {
           setEmailStatus((prev) => ({ ...prev, [id]: data.email_sent }));
         }
         if (data.email_sent === false) {
-          alert('Leave processed, but email failed to send. Check backend logs or email configuration.');
+          showFeedbackModal('Leave processed, but email failed to send. Check backend logs or email configuration.', false);
         } else {
-          alert(`Leave ${draft.mode === 'approve' ? 'approved' : 'rejected'} successfully`);
+          showFeedbackModal(`Leave ${draft.mode === 'approve' ? 'approved' : 'rejected'} successfully`, true);
         }
       } else {
-        alert('Failed to process leave: ' + data.message);
+        showFeedbackModal('Failed to process leave: ' + data.message, false);
       }
     } catch (error) {
       console.error('Error processing leave:', error);
-      alert('Error processing leave request: ' + error.message);
+      showFeedbackModal('Error processing leave request: ' + error.message, false);
     } finally {
       setProcessingId(null);
     }
@@ -215,9 +229,11 @@ const WardenLeave = () => {
 
   return (
     <div className="leave-page">
-      <div className="leave-header">
-        <h1>Leave Approvals</h1>
-        <p>Review and manage student leave requests</p>
+      <div className="page-header-card">
+        <div className="page-header-text">
+          <h2>Leave Approvals</h2>
+          <p>Review and manage student leave requests</p>
+        </div>
       </div>
 
       <div className="agentic-summary-grid" style={{ marginBottom: '16px' }}>
@@ -238,15 +254,6 @@ const WardenLeave = () => {
           <div className="agentic-value">{agenticData.alerts.length || 0}</div>
         </div>
       </div>
-
-      {agenticData.new_request_alerts.length > 0 && (
-        <div className="leave-reason" style={{ marginBottom: '16px', background: '#fff7ed', borderColor: '#fdba74' }}>
-          <div className="leave-label" style={{ color: '#9a3412' }}>New Leave Request Alerts</div>
-          <div className="leave-value" style={{ color: '#7c2d12' }}>
-            {agenticData.new_request_alerts.slice(0, 3).map((alert) => `${alert.title}: ${alert.message}`).join(' | ')}
-          </div>
-        </div>
-      )}
 
       <div className="leave-filters">
         <button 
@@ -463,6 +470,31 @@ const WardenLeave = () => {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {feedbackModal.open && (
+        <div className="leave-modal-overlay" onClick={closeFeedbackModal} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '12px', maxWidth: '420px', width: '90%', boxShadow: '0 20px 40px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #e5e7eb' }}>
+              <h2 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>
+                {feedbackModal.success ? '✅ Success' : '⚠️ Error'}
+              </h2>
+              <button onClick={closeFeedbackModal} style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ margin: 0, color: feedbackModal.success ? '#065f46' : '#991b1b', fontWeight: 500 }}>
+                {feedbackModal.message}
+              </p>
+            </div>
+            <div style={{ padding: '12px 20px 20px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeFeedbackModal}
+                style={{ padding: '8px 24px', borderRadius: '8px', border: 'none', background: feedbackModal.success ? '#16a34a' : '#dc2626', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+              >
+                OK
+              </button>
+            </div>
           </div>
         </div>
       )}

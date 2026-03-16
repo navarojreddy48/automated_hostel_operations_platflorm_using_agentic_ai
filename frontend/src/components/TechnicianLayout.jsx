@@ -15,7 +15,7 @@ const TechnicianLayout = ({ children }) => {
     <div className="technician-layout-wrapper">
       <Sidebar role="technician" />
       <TopNavbar role="technician" />
-      <main className="technician-layout-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+      <main className="technician-layout-main">
         {children || <Outlet />}
       </main>
     </div>

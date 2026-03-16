@@ -15,7 +15,7 @@ const SecurityLayout = ({ children }) => {
     <div className="security-layout">
       <Sidebar role="security" />
       <TopNavbar role="security" />
-      <main className="security-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+      <main className="security-main">
         {children || <Outlet />}
       </main>
     </div>

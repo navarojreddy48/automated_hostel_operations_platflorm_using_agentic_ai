@@ -38,10 +38,48 @@
   font-weight: 700;
 }
 
+.leave-header h2 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 22px;
+  font-weight: 700;
+}
+
 .leave-header p {
   margin: 6px 0 0 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.page-header-card {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 20px 24px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.page-header-text h2,
+.page-header-text h1 {
+  margin: 0;
+}
+
+.page-header-text p {
+  margin: 4px 0 0 0;
+}
+
+.primary-action-btn {
+  background: #0f172a;
+  color: #ffffff;
+  border: none;
+  border-radius: 25px;
+  padding: 10px 18px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .complaints-actions {
@@ -82,20 +120,16 @@
 }
 
 .complaints-raise-btn {
-  background-color: var(--accent);
-  color: var(--white);
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
+  padding: 10px 18px;
+  border-radius: 25px;
   font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+  font-weight: 500;
   transition: all 0.2s ease;
   white-space: nowrap;
 }
 
 .complaints-raise-btn:hover {
-  background-color: #2563eb;
+  background-color: #111827;
   box-shadow: var(--shadow-md);
 }
 
@@ -274,6 +308,13 @@
     padding: 16px;
   }
 
+  .page-header-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+  }
+
   .leave-grid {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -291,7 +332,8 @@
     flex: 1;
   }
 
-  .complaints-raise-btn {
+  .complaints-raise-btn,
+  .primary-action-btn {
     width: 100%;
   }
 }

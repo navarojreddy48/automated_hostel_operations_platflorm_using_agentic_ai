@@ -10,7 +10,7 @@ const AdminLayout = () => {
       <div className="admin-layout">
         <Sidebar role="admin" />
         <TopNavbar role="admin" />
-        <main className="admin-main" style={{ marginLeft: 'var(--sidebar-width, 280px)', paddingTop: '84px' }}>
+        <main className="admin-main">
           <Outlet />
         </main>
       </div>

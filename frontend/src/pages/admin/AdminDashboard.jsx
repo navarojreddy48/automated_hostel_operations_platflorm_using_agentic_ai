@@ -153,12 +153,12 @@ const AdminDashboard = () => {
 
   return (
     <div className="admin-dashboard-page">
-      <header className="admin-header">
-        <div className="header-left">
+      <header className="admin-header page-header-card">
+        <div className="header-left page-header-text">
           <h1 className="admin-welcome">Admin Dashboard</h1>
-          <p className="admin-sub">System administration, monitoring and user management</p>
+          <p className="admin-sub">System administration and monitoring</p>
         </div>
-        <div style={{ fontSize: '14px', color: '#6b7280', textAlign: 'right' }}>
+        <div className="page-header-action-group" style={{ fontSize: '14px', color: '#6b7280', textAlign: 'right' }}>
           {loading ? 'Loading...' : (isRefreshing ? 'Refreshing...' : 'Live data')}
           {lastUpdated && (
             <div style={{ fontSize: '12px', marginTop: '2px' }}>
@@ -227,13 +227,6 @@ const AdminDashboard = () => {
       <section className="management-section">
         <h2>Quick Access</h2>
         <div className="management-grid">
-          <div className="mgmt-card primary" onClick={() => navigate('/admin/users')}>
-            <div className="mgmt-icon">👥</div>
-            <div className="mgmt-title">All Users</div>
-            <div className="mgmt-count">{metrics.totalStudents + metrics.totalWardens + metrics.totalTechnicians + metrics.totalSecurity}</div>
-            <div className="mgmt-desc">Manage accounts</div>
-          </div>
-
           <div className="mgmt-card" onClick={() => navigate('/admin/students')}>
             <div className="mgmt-icon">🎓</div>
             <div className="mgmt-title">Students</div>
