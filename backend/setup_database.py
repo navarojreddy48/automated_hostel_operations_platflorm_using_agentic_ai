@@ -69,10 +69,10 @@ def execute_sql_file(cursor, conn, filename, description):
 
 def main():
     db_config = {
-        'host': 'localhost',
-        'user': 'root',
-        'password': 'navaroj@1923132',
-        'database': 'hostelconnect'
+        'host': os.getenv('MYSQL_HOST', 'localhost'),
+        'user': os.getenv('MYSQL_USER', 'root'),
+        'password': os.getenv('MYSQL_PASSWORD', os.getenv('DB_PASSWORD', '')),
+        'database': os.getenv('MYSQL_DB', os.getenv('DB_NAME', 'hostelconnect_db'))
     }
     
     print("="*60)

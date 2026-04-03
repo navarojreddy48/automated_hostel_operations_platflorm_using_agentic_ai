@@ -7,14 +7,15 @@ Use this after schema creation when you want:
 """
 
 import sys
+import os
 import mysql.connector
 
 
 DB_CONFIG = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'navaroj@1923132',
-    'database': 'hostelconnect_db'
+    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'user': os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', os.getenv('DB_PASSWORD', '')),
+    'database': os.getenv('MYSQL_DB', os.getenv('DB_NAME', 'hostelconnect_db'))
 }
 
 

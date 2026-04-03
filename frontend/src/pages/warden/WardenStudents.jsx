@@ -152,6 +152,9 @@ const WardenStudents = () => {
     year: '',
     email: '',
     phone: '',
+    parentName: '',
+    parentEmail: '',
+    parentPhone: '',
     block: '',
     room: '',
     feeStatus: 'pending'
@@ -223,6 +226,9 @@ const WardenStudents = () => {
       year: student.year,
       email: student.email,
       phone: student.phone,
+      parentName: student.parent_name || '',
+      parentEmail: student.parent_email || '',
+      parentPhone: student.parent_phone || '',
       block: blockName,
       room: student.room_id || '',
       feeStatus: student.fee_status || 'pending'
@@ -394,6 +400,9 @@ const WardenStudents = () => {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
+        parentName: formData.parentName,
+        parentEmail: formData.parentEmail,
+        parentPhone: formData.parentPhone,
         rollNumber: formData.rollNumber,
         collegeName: formData.collegeName === 'Other' ? formData.collegeOther.trim() : formData.collegeName,
         branch: formData.branch,
@@ -465,6 +474,9 @@ const WardenStudents = () => {
       year: '',
       email: '',
       phone: '',
+      parentName: '',
+      parentEmail: '',
+      parentPhone: '',
       block: '',
       room: '',
       feeStatus: 'pending'
@@ -779,6 +791,18 @@ const WardenStudents = () => {
                     <span className="detail-label">Phone</span>
                     <span className="detail-value">{selectedStudent.phone || 'N/A'}</span>
                   </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Parent / Guardian Name</span>
+                    <span className="detail-value">{selectedStudent.parent_name || 'N/A'}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Parent / Guardian Email</span>
+                    <span className="detail-value">{selectedStudent.parent_email || 'N/A'}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Parent / Guardian Phone</span>
+                    <span className="detail-value">{selectedStudent.parent_phone || 'N/A'}</span>
+                  </div>
                 </div>
 
                 <div className="detail-section">
@@ -989,6 +1013,42 @@ const WardenStudents = () => {
                     name="phone"
                     className="form-input"
                     value={formData.phone}
+                    onChange={handleFormChange}
+                    placeholder="+91 XXXXX XXXXX"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-row">
+                <div className="form-group">
+                  <label>Parent / Guardian Name</label>
+                  <input
+                    type="text"
+                    name="parentName"
+                    className="form-input"
+                    value={formData.parentName}
+                    onChange={handleFormChange}
+                    placeholder="Parent / guardian full name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Parent / Guardian Email</label>
+                  <input
+                    type="email"
+                    name="parentEmail"
+                    className="form-input"
+                    value={formData.parentEmail}
+                    onChange={handleFormChange}
+                    placeholder="parent@example.com"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Parent / Guardian Phone</label>
+                  <input
+                    type="tel"
+                    name="parentPhone"
+                    className="form-input"
+                    value={formData.parentPhone}
                     onChange={handleFormChange}
                     placeholder="+91 XXXXX XXXXX"
                   />

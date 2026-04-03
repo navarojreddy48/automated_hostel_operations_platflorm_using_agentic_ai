@@ -111,6 +111,9 @@ const AdminStudents = () => {
     year: '',
     email: '',
     phone: '',
+    parentName: '',
+    parentEmail: '',
+    parentPhone: '',
     block: '',
     room: ''
   });
@@ -172,6 +175,9 @@ const AdminStudents = () => {
       year: student.year,
       email: student.email,
       phone: student.phone,
+      parentName: student.parent_name || '',
+      parentEmail: student.parent_email || '',
+      parentPhone: student.parent_phone || '',
       block: blockName,
       room: student.room_id || ''
     });
@@ -330,6 +336,9 @@ const AdminStudents = () => {
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
+        parentName: formData.parentName,
+        parentEmail: formData.parentEmail,
+        parentPhone: formData.parentPhone,
         rollNumber: formData.rollNumber,
         collegeName: formData.collegeName === 'Other' ? formData.collegeOther.trim() : formData.collegeName,
         branch: formData.branch,
@@ -399,6 +408,9 @@ const AdminStudents = () => {
       year: '',
       email: '',
       phone: '',
+      parentName: '',
+      parentEmail: '',
+      parentPhone: '',
       block: '',
       room: ''
     });
@@ -694,6 +706,18 @@ const AdminStudents = () => {
                   <div className="view-value">{selectedStudent.phone || 'N/A'}</div>
                 </div>
                 <div className="view-item">
+                  <div className="view-label">Parent / Guardian Name</div>
+                  <div className="view-value">{selectedStudent.parent_name || 'N/A'}</div>
+                </div>
+                <div className="view-item">
+                  <div className="view-label">Parent / Guardian Email</div>
+                  <div className="view-value">{selectedStudent.parent_email || 'N/A'}</div>
+                </div>
+                <div className="view-item">
+                  <div className="view-label">Parent / Guardian Phone</div>
+                  <div className="view-value">{selectedStudent.parent_phone || 'N/A'}</div>
+                </div>
+                <div className="view-item">
                   <div className="view-label">Branch</div>
                   <div className="view-value">{selectedStudent.branch || 'N/A'}</div>
                 </div>
@@ -918,6 +942,42 @@ const AdminStudents = () => {
                     name="phone"
                     className="form-input"
                     value={formData.phone}
+                    onChange={handleFormChange}
+                    placeholder="+91 XXXXX XXXXX"
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-row">
+                <div className="form-group">
+                  <label>Parent / Guardian Name</label>
+                  <input
+                    type="text"
+                    name="parentName"
+                    className="form-input"
+                    value={formData.parentName}
+                    onChange={handleFormChange}
+                    placeholder="Parent / guardian full name"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Parent / Guardian Email</label>
+                  <input
+                    type="email"
+                    name="parentEmail"
+                    className="form-input"
+                    value={formData.parentEmail}
+                    onChange={handleFormChange}
+                    placeholder="parent@example.com"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Parent / Guardian Phone</label>
+                  <input
+                    type="tel"
+                    name="parentPhone"
+                    className="form-input"
+                    value={formData.parentPhone}
                     onChange={handleFormChange}
                     placeholder="+91 XXXXX XXXXX"
                   />

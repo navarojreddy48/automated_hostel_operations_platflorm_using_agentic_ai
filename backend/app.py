@@ -40,16 +40,19 @@ if USE_SMTP:
     SMTP_CONFIG = {
         'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
         'smtp_port': int(os.getenv('SMTP_PORT', 587)),
-        'sender_email': os.getenv('SENDER_EMAIL', 'hostelconnect05@gmail.com'),
-        'sender_password': os.getenv('SENDER_PASSWORD', 'pnwv tpzk agxx gcxy'),
+        'sender_email': os.getenv('SENDER_EMAIL', 'noreply@example.com'),
+        'sender_password': os.getenv('SENDER_PASSWORD', ''),
         'use_tls': True
     }
     print("Email mode: SMTP")
     print(f"Sender email: {SMTP_CONFIG['sender_email']}")
 else:
     # Gmail API Configuration (OAuth2)
-    CLIENT_SECRET_FILE = os.path.join(os.path.dirname(__file__), 'client_secret.json')
-    SENDER_EMAIL = 'hostelconnect05@gmail.com'
+    CLIENT_SECRET_FILE = os.getenv(
+        'CLIENT_SECRET_FILE',
+        os.path.join(os.path.dirname(__file__), 'client_secret.json')
+    )
+    SENDER_EMAIL = os.getenv('SENDER_EMAIL', 'noreply@example.com')
     SCOPES = ['https://www.googleapis.com/auth/gmail.send']
     print("Email mode: Gmail API")
 
@@ -65,10 +68,10 @@ def get_gmail_service():
         return None
 
 # MySQL Configuration
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'navaroj@1923132'
-app.config['MYSQL_DB'] = 'hostelconnect_db'
+app.config['MYSQL_HOST'] = os.getenv('MYSQL_HOST', 'localhost')
+app.config['MYSQL_USER'] = os.getenv('MYSQL_USER', 'root')
+app.config['MYSQL_PASSWORD'] = os.getenv('MYSQL_PASSWORD', os.getenv('DB_PASSWORD', ''))
+app.config['MYSQL_DB'] = os.getenv('MYSQL_DB', os.getenv('DB_NAME', 'hostelconnect_db'))
 
 # File Upload Configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '..', 'uploaded_files')
@@ -7710,6 +7713,7 @@ def get_all_users():
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
                     s.roll_number, s.college_name, s.branch, s.year, s.fee_status, s.registration_status,
+                    s.parent_name, s.parent_email, s.parent_phone,
                     COALESCE(s.phone, w.phone, sp.phone, t.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
                     COALESCE(b.block_name, w.hostel_block) AS block,
@@ -7741,6 +7745,7 @@ def get_all_users():
             query = """
                 SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.staff_id,
                     s.roll_number, s.college_name, s.branch, s.year, s.fee_status, s.registration_status,
+                    s.parent_name, s.parent_email, s.parent_phone,
                     COALESCE(s.phone, w.phone, sp.phone, t.phone) AS phone,
                     s.room_id, r.room_number, b.id AS block_id, b.block_name,
                     COALESCE(b.block_name, w.hostel_block) AS block,
@@ -8114,6 +8119,9 @@ def update_user_details(user_id):
             roll_number = data.get('rollNumber')
             room_id = data.get('roomId')  # Room ID for hostel assignment
             fee_status = data.get('feeStatus')  # Payment status update
+            parent_name = data.get('parentName')
+            parent_email = data.get('parentEmail')
+            parent_phone = data.get('parentPhone')
             
             # Get existing student record with current room
             cursor.execute("SELECT id, room_id FROM students WHERE user_id = %s", (user_id,))
@@ -8183,6 +8191,16 @@ def update_user_details(user_id):
                 if phone:
                     student_update += "phone = %s, "
                     student_params.append(phone)
+                # Parent/Guardian contact details
+                if parent_name is not None:
+                    student_update += "parent_name = %s, "
+                    student_params.append(parent_name)
+                if parent_email is not None:
+                    student_update += "parent_email = %s, "
+                    student_params.append(parent_email)
+                if parent_phone is not None:
+                    student_update += "parent_phone = %s, "
+                    student_params.append(parent_phone)
                 if room_id:
                     student_update += "room_id = %s, "
                     student_params.append(room_id)

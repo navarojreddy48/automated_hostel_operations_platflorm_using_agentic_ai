@@ -1,12 +1,13 @@
 import mysql.connector
 import sys
+import os
 
 # Database configuration
 db_config = {
-    'host': 'localhost',
-    'user': 'root',
-    'password': 'navaroj@1923132',
-    'database': 'hostelconnect_db'
+    'host': os.getenv('MYSQL_HOST', 'localhost'),
+    'user': os.getenv('MYSQL_USER', 'root'),
+    'password': os.getenv('MYSQL_PASSWORD', os.getenv('DB_PASSWORD', '')),
+    'database': os.getenv('MYSQL_DB', os.getenv('DB_NAME', 'hostelconnect_db'))
 }
 
 def run_migration():
