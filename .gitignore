@@ -42,4 +42,3 @@ exported_data.sql
 # Local uploaded artifacts may contain personal documents/images
 uploaded_files/*
 !uploaded_files/.gitkeep
-!uploaded_files/demo_data.sql

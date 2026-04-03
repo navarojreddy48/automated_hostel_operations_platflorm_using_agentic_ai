@@ -260,7 +260,7 @@ Use this checklist before pushing to a public or shared repository.
 3. Avoid committing personal data:
 - Do not commit exported production/local dumps such as exported_data.sql.
 - Do not commit uploaded personal files under uploaded_files/.
-- Keep only sanitized demo data for public sharing.
+- Do not commit demo SQL datasets intended for local testing.
 
 4. Quick pre-push checks:
 - Run git status and confirm no secret files are staged.
